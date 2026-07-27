@@ -1,0 +1,275 @@
+.app-header {
+  position: fixed;
+  display: flex;
+  top: 0;
+  left: 0;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 20px;
+  width: 100vw;
+  max-width: 100%;
+  height: 55px;
+  background-color: #222;
+  color: white;
+  z-index: 100;
+}
+
+.logo-container {
+  display: flex;
+  align-items: center;
+}
+
+.gm-logo {
+  display: block;
+  width: 150px;
+  height: 25px;
+  background-image: url(../../../assets/icons/gm-logo.svg);
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-position: center;
+  cursor: pointer;
+}
+
+.auth-and-language {
+  display: flex;
+  align-items: center;
+
+  .custom-loader {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 60px;
+
+    .circle {
+      width: 12px;
+      height: 12px;
+      margin: 0 4px;
+      border-radius: 50%;
+      opacity: 0;
+      background-color: #ffffff;
+      animation: fall 1.2s infinite ease-in-out;
+    }
+
+    .delay1 {
+      animation-delay: 0.2s;
+    }
+
+    .delay2 {
+      animation-delay: 0.4s;
+    }
+  }
+
+  .language-dropdown {
+    position: relative;
+    margin-right: 10px;
+
+    .lang-btn {
+      background-color: transparent;
+      color: white;
+      border: none;
+      cursor: pointer;
+      transition: background-color 0.3s ease;
+      padding: 5px;
+      border-radius: 5px;
+      user-select: none;
+
+      &:hover {
+        background-color: #333;
+      }
+
+      img {
+        padding: 0;
+        width: 30px;
+        height: 30px;
+        object-fit: cover;
+      }
+    }
+
+    .language-list {
+      position: absolute;
+      left: 0px;
+      top: 50px;
+      background-color: #222;
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      width: 150px;
+      border: 1px solid #333;
+      z-index: 100;
+
+      li {
+        padding: 10px;
+        cursor: pointer;
+        color: white;
+
+        &:hover {
+          background-color: #333;
+        }
+      }
+    }
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    min-width: 50px;
+    max-width: 250px;
+
+    .user-menu {
+      position: relative;
+
+      .user-header {
+        display: flex;
+        align-items: center;
+        padding: 5px;
+        cursor: pointer;
+
+        .user-avatar {
+          width: 30px;
+          height: 30px;
+          object-fit: cover;
+          border-radius: 50%;
+          margin-right: 10px;
+          user-select: none;
+        }
+
+        .user-nickname {
+          color: white;
+          font-size: 18px;
+          font-weight: 500;
+          border-radius: 3px;
+          line-height: 1;
+          user-select: none;
+        }
+
+        &.active,
+        &:hover {
+          background-color: #333;
+          border-radius: 5px;
+        }
+      }
+
+      .user-menu-list {
+        position: absolute;
+        right: 0;
+        top: 50px;
+        background-color: #222;
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        border: 1px solid #333;
+        z-index: 100;
+
+        li {
+          width: 125px;
+          height: 40px;
+          line-height: 40px;
+          font-size: 16px;
+          text-align: left;
+          padding-left: 15px;
+          padding-right: 15px;
+          cursor: pointer;
+          color: white;
+          transition: background-color 0.3s ease;
+          user-select: none;
+          white-space: nowrap;
+
+          &:hover {
+            background-color: #333;
+          }
+        }
+      }
+    }
+  }
+
+  .auth-buttons {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    position: relative;
+
+    .login-btn,
+    .register-btn {
+      position: relative;
+      z-index: 1;
+      background-color: #c444ff;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background-color 0.3s, box-shadow 0.3s;
+      background: linear-gradient(270deg, #c444ff, #9c33cc, #c444ff);
+      background-size: 200% 200%;
+      animation: buttonGlow 5s linear infinite;
+      user-select: none;
+
+      &:hover {
+        background-color: #9c33cc;
+      }
+
+      &::before {
+        content: "";
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        border-radius: 10px;
+        z-index: -1;
+        display: none;
+        background: linear-gradient(90deg, #fff, #c444ff, #fff);
+        background-size: 200% 200%;
+        filter: blur(4px);
+        opacity: 0.9;
+      }
+    }
+
+    &.highlight {
+      .login-btn::before,
+      .register-btn::before {
+        display: block;
+        animation: borderGlow 5s ease-in-out infinite;
+      }
+    }
+  }
+}
+
+@keyframes buttonGlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes borderGlow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes fall {
+  0% {
+    transform: translateY(-10px) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(0) scale(1.2);
+    opacity: 0.6;
+  }
+  100% {
+    transform: translateY(10px) scale(0.8);
+    opacity: 0;
+  }
+}
