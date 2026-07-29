@@ -1,32 +1,83 @@
-# React + TypeScript + Vite
+# GMHelper Notify Web
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+GMHelper Notify Web is the frontend application for the GMHelper notification system.
 
-Currently, two official plugins are available:
+It provides a modern web interface for managing notification campaigns, automation rules, templates, and user messaging. The application is built with React and communicates with the notification backend through a REST API.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Features
 
-## React Compiler
+* Dashboard
+* Notification campaigns
+* Automation rules
+* User agreement notifications
+* Direct user messaging
+* Email template management
+* Application settings
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Technologies
 
-## Expanding the Oxlint configuration
+* React
+* TypeScript
+* Vite
+* React Router
+* SCSS
+* Oxlint
+* Prettier
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+## Getting Started
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+### Prerequisites
+
+* Node.js 22+
+* npm
+
+### Installation
+
+```bash
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+### Development
+
+```bash
+npm run dev
+```
+
+### Production Build
+
+```bash
+npm run build
+```
+
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+## Project Structure
+
+```text
+src/
+├── assets
+├── components
+├── hooks
+├── layouts
+├── pages
+├── services
+├── styles
+├── types
+└── utils
+```
+
+## Related Repositories
+
+* [GMHelper API](https://github.com/kimrenny/gmhelper-api)
+* [GMHelper Web](https://github.com/kimrenny/gmhelper-web)
+* [GMHelper Notify Web](https://github.com/kimrenny/gmhelper-notify-web)
+* **GMHelper Notify API** *(Coming soon)*
+
+
+## License
+
+This project is licensed under the MIT License.

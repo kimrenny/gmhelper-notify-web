@@ -1,0 +1,138 @@
+.gm-admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1.75rem;
+  color: #ffffff;
+}
+
+.gm-admin-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.gm-admin-page__title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: #ffffff;
+}
+
+.gm-admin-page__description {
+  margin: 0.4rem 0 0;
+  color: #b1b1b1;
+  line-height: 1.6;
+}
+
+.gm-admin-card {
+  background: #222222;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  box-shadow: 0 0 20px 5px rgba(189, 0, 214, 0.6);
+  padding: 1.25rem;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gm-admin-card:hover {
+  transform: translateY(-1px);
+}
+
+.gm-admin-card__title {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+  color: #ffffff;
+}
+
+.gm-admin-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.gm-admin-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.gm-admin-grid--cards {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.gm-admin-input,
+.gm-admin-select {
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border-radius: 5px;
+  border: 1px solid #333333;
+  background: #111111;
+  color: #ffffff;
+  font: inherit;
+}
+
+.gm-admin-input::placeholder,
+.gm-admin-select::placeholder {
+  color: #8b8b8b;
+}
+
+.gm-admin-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.8rem 1rem;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #161616;
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.gm-admin-btn:hover {
+  background: #1d1d1d;
+  box-shadow: 0 0 12px rgba(189, 0, 214, 0.25);
+}
+
+.gm-admin-btn--primary {
+  border-color: rgba(189, 0, 214, 0.45);
+  box-shadow: 0 0 14px rgba(189, 0, 214, 0.3);
+}
+
+.gm-admin-muted {
+  color: #b1b1b1;
+}
+
+.gm-admin-warning {
+  padding: 1rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 0, 0, 0.2);
+  background: rgba(255, 0, 0, 0.12);
+  color: #ffd3d3;
+}
+
+.gm-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: #ffffff;
+}
+
+.gm-admin-table th,
+.gm-admin-table td {
+  padding: 0.95rem 1rem;
+  text-align: left;
+}
+
+.gm-admin-table thead {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.gm-admin-table tbody tr {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gm-admin-empty {
+  min-height: 12rem;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+}
