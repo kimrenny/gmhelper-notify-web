@@ -28,6 +28,9 @@ body {
   min-height: 100vh;
 }
 
+@import 'admin-layout';
+@import 'admin-theme';
+
 .app-shell {
   min-height: 100vh;
   display: grid;

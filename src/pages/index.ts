@@ -1,1 +1,8 @@
 export { default as Home } from './Home'
+export { default as DashboardPage } from './DashboardPage'
+export { default as CampaignsPage } from './CampaignsPage'
+export { default as AutomationPage } from './AutomationPage'
+export { default as AgreementPage } from './AgreementPage'
+export { default as DirectMessagePage } from './DirectMessagePage'
+export { default as EmailTemplatesPage } from './EmailTemplatesPage'
+export { default as SettingsPage } from './SettingsPage'
