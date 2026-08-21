@@ -1,10 +1,257 @@
-const templates = [
-  { name: 'Welcome email', description: 'Sent to newly registered users', updated: '2 days ago' },
-  { name: 'Reminder email', description: 'Used for inactive accounts', updated: '1 week ago' },
-  { name: 'Agreement notice', description: 'Shared for policy updates', updated: '3 weeks ago' },
-]
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from 'react'
+import { ApiError, templateService } from '../services'
+import type { CreateTemplateInput, EmailTemplate, UpdateTemplateInput } from '../types'
+
+interface FormState {
+  templateKey: string
+  name: string
+  subject: string
+  htmlBody: string
+  plainTextBody: string
+  locale: string
+  status: string
+  version: number
+}
+
+const initialFormState: FormState = {
+  templateKey: '',
+  name: '',
+  subject: '',
+  htmlBody: '',
+  plainTextBody: '',
+  locale: 'en',
+  status: 'active',
+  version: 1,
+}
+
+function formatDateTime(dateStr: string): string {
+  try {
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      return dateStr
+    }
+    return date.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  } catch {
+    return dateStr
+  }
+}
 
 function EmailTemplatesPage() {
+  const [templates, setTemplates] = useState<EmailTemplate[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [listError, setListError] = useState<string | null>(null)
+
+  // Form states
+  const [isFormOpen, setIsFormOpen] = useState(false)
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null)
+  const [formData, setFormData] = useState<FormState>(initialFormState)
+  const [formValidationErrors, setFormValidationErrors] = useState<Record<string, string>>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  // Delete state
+  const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
+  const loadTemplates = useCallback(async (signal?: AbortSignal) => {
+    setIsLoading(true)
+    setListError(null)
+    try {
+      const data = await templateService.getTemplates(signal)
+      setTemplates(data)
+    } catch (err) {
+      if (signal?.aborted) {
+        return
+      }
+      const message = err instanceof Error ? err.message : 'Failed to load email templates'
+      setListError(message)
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadTemplates(controller.signal)
+
+    return () => {
+      controller.abort()
+    }
+  }, [loadTemplates])
+
+  const openCreateForm = () => {
+    setEditingTemplate(null)
+    setFormData(initialFormState)
+    setFormValidationErrors({})
+    setFormError(null)
+    setIsFormOpen(true)
+  }
+
+  const openEditForm = (template: EmailTemplate) => {
+    setEditingTemplate(template)
+    setFormData({
+      templateKey: template.templateKey,
+      name: template.name,
+      subject: template.subject,
+      htmlBody: template.htmlBody,
+      plainTextBody: template.plainTextBody ?? '',
+      locale: template.locale,
+      status: template.status,
+      version: template.version,
+    })
+    setFormValidationErrors({})
+    setFormError(null)
+    setIsFormOpen(true)
+  }
+
+  const closeForm = () => {
+    if (isSaving) return
+    setIsFormOpen(false)
+    setEditingTemplate(null)
+    setFormData(initialFormState)
+    setFormValidationErrors({})
+    setFormError(null)
+  }
+
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === 'version' ? Math.max(1, parseInt(value, 10) || 1) : value,
+    }))
+    if (formValidationErrors[name]) {
+      setFormValidationErrors((prev) => {
+        const next = { ...prev }
+        delete next[name]
+        return next
+      })
+    }
+  }
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
+    if (!formData.name.trim()) {
+      errors.name = 'Name is required'
+    }
+    if (!formData.templateKey.trim()) {
+      errors.templateKey = 'Template key is required'
+    }
+    if (!formData.subject.trim()) {
+      errors.subject = 'Subject is required'
+    }
+    if (!formData.htmlBody.trim()) {
+      errors.htmlBody = 'HTML body is required'
+    }
+    setFormValidationErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleFormSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!validateForm()) {
+      return
+    }
+
+    setIsSaving(true)
+    setFormError(null)
+
+    try {
+      if (editingTemplate) {
+        const updateData: UpdateTemplateInput = {
+          templateKey: formData.templateKey.trim(),
+          name: formData.name.trim(),
+          subject: formData.subject.trim(),
+          htmlBody: formData.htmlBody,
+          plainTextBody: formData.plainTextBody.trim() || undefined,
+          locale: formData.locale.trim() || 'en',
+          status: formData.status,
+          version: formData.version,
+        }
+
+        const updated = await templateService.updateTemplate(editingTemplate.id, updateData)
+        setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+      } else {
+        const createData: CreateTemplateInput = {
+          templateKey: formData.templateKey.trim(),
+          name: formData.name.trim(),
+          subject: formData.subject.trim(),
+          htmlBody: formData.htmlBody,
+          plainTextBody: formData.plainTextBody.trim() || undefined,
+          locale: formData.locale.trim() || 'en',
+          status: formData.status,
+          version: formData.version,
+        }
+
+        const created = await templateService.createTemplate(createData)
+        setTemplates((prev) => [created, ...prev])
+      }
+
+      setIsFormOpen(false)
+      setEditingTemplate(null)
+      setFormData(initialFormState)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.statusCode === 409 || err.code === 'CONFLICT') {
+          setFormError('A template with this key, locale, and version already exists.')
+        } else if (err.statusCode === 400) {
+          setFormError(`Validation error: ${err.message}`)
+        } else {
+          setFormError(err.message || 'Failed to save template. Please try again.')
+        }
+      } else {
+        setFormError('An unexpected error occurred while saving the template.')
+      }
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const promptDelete = (template: EmailTemplate) => {
+    setTemplateToDelete(template)
+    setDeleteError(null)
+  }
+
+  const cancelDelete = () => {
+    if (isDeleting) return
+    setTemplateToDelete(null)
+    setDeleteError(null)
+  }
+
+  const confirmDelete = async () => {
+    if (!templateToDelete) return
+
+    setIsDeleting(true)
+    setDeleteError(null)
+
+    try {
+      await templateService.deleteTemplate(templateToDelete.id)
+      setTemplates((prev) => prev.filter((t) => t.id !== templateToDelete.id))
+      setTemplateToDelete(null)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.statusCode === 409 || err.code === 'CONFLICT') {
+          setDeleteError('This template cannot currently be deleted because it is in use by campaigns or automations.')
+        } else if (err.statusCode === 404) {
+          setDeleteError('Template not found. It may have already been deleted.')
+          setTemplates((prev) => prev.filter((t) => t.id !== templateToDelete.id))
+        } else {
+          setDeleteError(err.message || 'Failed to delete template.')
+        }
+      } else {
+        setDeleteError('Network error occurred while deleting the template.')
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   return (
     <section className="gm-admin-page">
       <div className="gm-admin-page__header">
@@ -13,42 +260,328 @@ function EmailTemplatesPage() {
           <p className="gm-admin-page__description">Manage the available message templates for your campaigns.</p>
         </div>
 
-        <button type="button" className="gm-admin-btn gm-admin-btn--primary">
-          Add template
-        </button>
+        {!isFormOpen && (
+          <button type="button" className="gm-admin-btn gm-admin-btn--primary" onClick={openCreateForm}>
+            Add template
+          </button>
+        )}
       </div>
 
-      <div className="gm-admin-card" style={{ overflowX: 'auto', padding: 0 }}>
-        <table className="gm-admin-table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Description</th>
-              <th>Updated</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {templates.map((template) => (
-              <tr key={template.name}>
-                <td>{template.name}</td>
-                <td className="gm-admin-muted">{template.description}</td>
-                <td className="gm-admin-muted">{template.updated}</td>
-                <td>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button type="button" className="gm-admin-btn">
-                      Edit
-                    </button>
-                    <button type="button" className="gm-admin-btn" style={{ color: '#fecaca', borderColor: 'rgba(248,113,113,0.3)' }}>
-                      Delete
-                    </button>
-                  </div>
-                </td>
+      {listError && (
+        <div
+          className="gm-admin-warning"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}
+        >
+          <span>{listError}</span>
+          <button type="button" className="gm-admin-btn" onClick={() => void loadTemplates()}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal / Prompt */}
+      {templateToDelete && (
+        <div
+          className="gm-admin-card"
+          style={{
+            borderColor: 'rgba(239, 68, 68, 0.4)',
+            background: 'rgba(26, 17, 23, 0.95)',
+          }}
+        >
+          <h2 className="gm-admin-card__title" style={{ color: '#fca5a5' }}>
+            Confirm Delete
+          </h2>
+          <p style={{ color: '#e2e8f0', margin: '0.5rem 0 1rem', lineHeight: 1.6 }}>
+            Are you sure you want to delete template <strong>{templateToDelete.name}</strong> (
+            <code>{templateToDelete.templateKey}</code>)? This action cannot be undone.
+          </p>
+
+          {deleteError && (
+            <div className="gm-admin-warning" style={{ marginBottom: '1rem' }}>
+              {deleteError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+            <button type="button" className="gm-admin-btn" onClick={cancelDelete} disabled={isDeleting}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="gm-admin-btn"
+              style={{
+                background: '#dc2626',
+                borderColor: '#ef4444',
+                color: '#ffffff',
+                opacity: isDeleting ? 0.7 : 1,
+              }}
+              onClick={() => void confirmDelete()}
+              disabled={isDeleting}
+            >
+              {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Form Card */}
+      {isFormOpen && (
+        <div className="gm-admin-card" style={{ maxWidth: '840px' }}>
+          <h2 className="gm-admin-card__title">
+            {editingTemplate ? `Edit Template: ${editingTemplate.name}` : 'New Email Template'}
+          </h2>
+
+          {formError && (
+            <div className="gm-admin-warning" style={{ marginBottom: '1.25rem' }}>
+              {formError}
+            </div>
+          )}
+
+          <form onSubmit={(e) => void handleFormSubmit(e)} style={{ display: 'grid', gap: '1rem' }}>
+            <div className="gm-admin-grid gm-admin-grid--2">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  Name <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <input
+                  name="name"
+                  className="gm-admin-input"
+                  placeholder="e.g. Welcome Email"
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                />
+                {formValidationErrors.name && (
+                  <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.name}</span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  Template Key <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <input
+                  name="templateKey"
+                  className="gm-admin-input"
+                  placeholder="e.g. welcome_email"
+                  value={formData.templateKey}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                />
+                {formValidationErrors.templateKey && (
+                  <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.templateKey}</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                Subject <span style={{ color: '#f87171' }}>*</span>
+              </label>
+              <input
+                name="subject"
+                className="gm-admin-input"
+                placeholder="e.g. Welcome to GMHelper!"
+                value={formData.subject}
+                onChange={handleInputChange}
+                disabled={isSaving}
+              />
+              {formValidationErrors.subject && (
+                <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.subject}</span>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Locale</label>
+                <input
+                  name="locale"
+                  className="gm-admin-input"
+                  placeholder="en"
+                  value={formData.locale}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                />
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Status</label>
+                <select
+                  name="status"
+                  className="gm-admin-select"
+                  value={formData.status}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                >
+                  <option value="active">Active</option>
+                  <option value="draft">Draft</option>
+                  <option value="archived">Archived</option>
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Version</label>
+                <input
+                  name="version"
+                  type="number"
+                  min="1"
+                  className="gm-admin-input"
+                  value={formData.version}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                HTML Body <span style={{ color: '#f87171' }}>*</span>
+              </label>
+              <textarea
+                name="htmlBody"
+                className="gm-admin-input"
+                placeholder="<p>Hello, welcome to our service...</p>"
+                rows={6}
+                style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.9rem' }}
+                value={formData.htmlBody}
+                onChange={handleInputChange}
+                disabled={isSaving}
+              />
+              {formValidationErrors.htmlBody && (
+                <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.htmlBody}</span>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                Plain Text Body <span style={{ color: '#94a3b8', fontWeight: 400 }}>(Optional)</span>
+              </label>
+              <textarea
+                name="plainTextBody"
+                className="gm-admin-input"
+                placeholder="Hello, welcome to our service..."
+                rows={4}
+                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: '0.9rem' }}
+                value={formData.plainTextBody}
+                onChange={handleInputChange}
+                disabled={isSaving}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+              <button type="button" className="gm-admin-btn" onClick={closeForm} disabled={isSaving}>
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="gm-admin-btn gm-admin-btn--primary"
+                disabled={isSaving}
+                style={{ opacity: isSaving ? 0.7 : 1 }}
+              >
+                {isSaving ? 'Saving...' : editingTemplate ? 'Update Template' : 'Create Template'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Templates Table / State Views */}
+      {isLoading ? (
+        <div className="gm-admin-card" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
+          <p className="gm-admin-muted" style={{ margin: 0 }}>
+            Loading templates...
+          </p>
+        </div>
+      ) : templates.length === 0 && !listError && !isFormOpen ? (
+        <div className="gm-admin-card">
+          <div
+            className="gm-admin-empty"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '12rem' }}
+          >
+            <p style={{ margin: 0, color: '#cbd5e1' }}>No email templates found. Click "Add template" to create one.</p>
+          </div>
+        </div>
+      ) : (
+        <div className="gm-admin-card" style={{ overflowX: 'auto', padding: 0 }}>
+          <table className="gm-admin-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Key / Subject</th>
+                <th>Status</th>
+                <th>Updated</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {templates.map((template) => (
+                <tr key={template.id}>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{template.name}</div>
+                    <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
+                      v{template.version} ({template.locale})
+                    </div>
+                  </td>
+                  <td>
+                    <div style={{ color: '#ffffff' }}>{template.subject}</div>
+                    <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
+                      {template.templateKey}
+                    </div>
+                  </td>
+                  <td>
+                    <span
+                      style={{
+                        display: 'inline-block',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '4px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        textTransform: 'capitalize',
+                        background:
+                          template.status === 'active'
+                            ? 'rgba(34, 197, 94, 0.15)'
+                            : template.status === 'draft'
+                              ? 'rgba(234, 179, 8, 0.15)'
+                              : 'rgba(148, 163, 184, 0.15)',
+                        color:
+                          template.status === 'active'
+                            ? '#4ade80'
+                            : template.status === 'draft'
+                              ? '#facc15'
+                              : '#94a3b8',
+                      }}
+                    >
+                      {template.status}
+                    </span>
+                  </td>
+                  <td className="gm-admin-muted">{formatDateTime(template.updatedAt)}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="gm-admin-btn"
+                        onClick={() => openEditForm(template)}
+                        disabled={isSaving || isDeleting}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="gm-admin-btn"
+                        style={{ color: '#fecaca', borderColor: 'rgba(248,113,113,0.3)' }}
+                        onClick={() => promptDelete(template)}
+                        disabled={isSaving || isDeleting}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </section>
   )
 }
