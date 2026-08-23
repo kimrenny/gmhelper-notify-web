@@ -1,3 +1,6 @@
+@use 'admin-layout';
+@use 'admin-theme';
+
 $color-bg: #0f172a;
 $color-card: #ffffff;
 $color-text: #334155;
@@ -27,9 +30,6 @@ body {
 #root {
   min-height: 100vh;
 }
-
-@import 'admin-layout';
-@import 'admin-theme';
 
 .app-shell {
   min-height: 100vh;
