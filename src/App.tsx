@@ -1,25 +1,36 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import { ProtectedRoute } from './components'
 import AppLayout from './layouts/AppLayout'
 import AdminLayout from './layouts/AdminLayout/AdminLayout'
-import Home from './pages/Home'
-import { AgreementPage, AutomationPage, CampaignsPage, DashboardPage, DirectMessagePage, EmailTemplatesPage, SettingsPage } from './pages'
+import {
+  AgreementPage,
+  AutomationPage,
+  CampaignsPage,
+  DashboardPage,
+  DirectMessagePage,
+  EmailTemplatesPage,
+  SettingsPage,
+} from './pages'
 
 function App() {
   return (
-    <AppLayout>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/settings" element={<SettingsPage />} />
-
-        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+    <AuthProvider>
+      <ProtectedRoute>
+        <AppLayout>
+          <Routes>
         <Route
-          path="/admin/dashboard"
+          path="/"
           element={
             <AdminLayout>
               <DashboardPage />
             </AdminLayout>
           }
         />
+        <Route path="/settings" element={<SettingsPage />} />
+
+        <Route path="/admin" element={<Navigate to="/" replace />} />
+        <Route path="/admin/dashboard" element={<Navigate to="/" replace />} />
         <Route
           path="/admin/campaigns"
           element={
@@ -68,8 +79,10 @@ function App() {
             </AdminLayout>
           }
         />
-      </Routes>
-    </AppLayout>
+        </Routes>
+      </AppLayout>
+      </ProtectedRoute>
+    </AuthProvider>
   )
 }
 

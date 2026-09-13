@@ -7,7 +7,7 @@ type SidebarProps = {
 }
 
 const links = [
-  { to: '/admin/dashboard', label: 'Dashboard' },
+  { to: '/', label: 'Dashboard' },
   { to: '/admin/campaigns', label: 'Campaigns' },
   { to: '/admin/automation', label: 'Automation' },
   { to: '/admin/agreement', label: 'Agreement' },
@@ -28,6 +28,7 @@ function Sidebar({ isCollapsed, onToggle }: SidebarProps) {
           <NavLink
             key={link.to}
             to={link.to}
+            end={link.to === '/'}
             className={({ isActive }) => `admin-sidebar__link ${isActive ? 'active' : ''}`}
           >
             <span className="admin-sidebar__icon" aria-hidden="true">
