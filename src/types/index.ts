@@ -42,4 +42,5 @@ export interface UpdateTemplateInput {
 }
 
 export * from './auth'
-
+export * from './api'
+export * from './campaign'

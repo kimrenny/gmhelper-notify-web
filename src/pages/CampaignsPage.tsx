@@ -1,69 +1,538 @@
+import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useApiClient } from '../hooks/useApiClient'
+import { ApiError, campaignService, templateService } from '../services'
+import type { Campaign, EmailTemplate } from '../types'
+
+interface ErrorInfo {
+  type: 'unauthorized' | 'forbidden' | 'api' | 'network'
+  message: string
+}
+
+interface CampaignFormState {
+  name: string
+  subject: string
+  templateId: string
+  campaignType: string
+  roleFilter: string
+  registrationDateFilter: string
+  emailConfirmedFilter: string
+  languageFilter: string
+  accountStatusFilter: string
+}
+
+const initialFormState: CampaignFormState = {
+  name: '',
+  subject: '',
+  templateId: '',
+  campaignType: 'broadcast',
+  roleFilter: 'All roles',
+  registrationDateFilter: 'Any date',
+  emailConfirmedFilter: 'Any',
+  languageFilter: 'All',
+  accountStatusFilter: 'Active',
+}
+
 const filterOptions = [
-  { label: 'User role', value: 'All roles' },
-  { label: 'Registration date', value: 'Any date' },
-  { label: 'Email confirmed', value: 'Any' },
-  { label: 'Language', value: 'All' },
-  { label: 'Account status', value: 'Active' },
+  { name: 'roleFilter', label: 'User role', value: 'All roles' },
+  { name: 'registrationDateFilter', label: 'Registration date', value: 'Any date' },
+  { name: 'emailConfirmedFilter', label: 'Email confirmed', value: 'Any' },
+  { name: 'languageFilter', label: 'Language', value: 'All' },
+  { name: 'accountStatusFilter', label: 'Account status', value: 'Active' },
 ]
 
+function formatDateTime(dateStr?: string): string {
+  if (!dateStr) return '-'
+  try {
+    const date = new Date(dateStr)
+    if (isNaN(date.getTime())) {
+      return dateStr
+    }
+    return date.toLocaleDateString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    })
+  } catch {
+    return dateStr
+  }
+}
+
+function getStatusBadgeStyle(status: string) {
+  const normalized = status.toLowerCase()
+  switch (normalized) {
+    case 'completed':
+    case 'active':
+      return { background: 'rgba(34, 197, 94, 0.15)', color: '#4ade80' }
+    case 'sending':
+      return { background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }
+    case 'scheduled':
+      return { background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }
+    case 'draft':
+      return { background: 'rgba(234, 179, 8, 0.15)', color: '#facc15' }
+    case 'partially_failed':
+    case 'failed':
+      return { background: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }
+    case 'cancelled':
+    default:
+      return { background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8' }
+  }
+}
+
 function CampaignsPage() {
+  const apiClient = useApiClient()
+  const [campaigns, setCampaigns] = useState<Campaign[]>([])
+  const [templates, setTemplates] = useState<EmailTemplate[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<ErrorInfo | null>(null)
+
+  // Composer / Form state
+  const [isComposerOpen, setIsComposerOpen] = useState(false)
+  const [formData, setFormData] = useState<CampaignFormState>(initialFormState)
+  const [formValidationErrors, setFormValidationErrors] = useState<Record<string, string>>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const loadCampaigns = useCallback(async (signal?: AbortSignal) => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const data = await campaignService.getCampaigns(apiClient, signal)
+      setCampaigns(data ?? [])
+    } catch (err) {
+      if (signal?.aborted) {
+        return
+      }
+
+      if (err instanceof ApiError) {
+        if (err.isUnauthorized || err.statusCode === 401) {
+          setError({
+            type: 'unauthorized',
+            message: 'You do not have access to campaigns. Please verify your authentication.',
+          })
+        } else if (err.isForbidden || err.statusCode === 403) {
+          setError({
+            type: 'forbidden',
+            message: 'You do not have permission to access campaigns.',
+          })
+        } else {
+          setError({
+            type: 'api',
+            message: err.message || 'Failed to load campaigns.',
+          })
+        }
+      } else {
+        const message = err instanceof Error ? err.message : 'An unexpected error occurred while loading campaigns.'
+        setError({
+          type: 'network',
+          message,
+        })
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setIsLoading(false)
+      }
+    }
+  }, [apiClient])
+
+  const loadTemplates = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const data = await templateService.getTemplates(apiClient, signal)
+      setTemplates(data ?? [])
+    } catch {
+      // Non-blocking template loading
+    }
+  }, [apiClient])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void loadCampaigns(controller.signal)
+    void loadTemplates(controller.signal)
+
+    return () => {
+      controller.abort()
+    }
+  }, [loadCampaigns, loadTemplates])
+
+  const toggleComposer = () => {
+    if (isSubmitting) return
+    setIsComposerOpen((prev) => !prev)
+    setFormData(initialFormState)
+    setFormValidationErrors({})
+    setFormError(null)
+  }
+
+  const handleTemplateChange = (templateId: string) => {
+    const selectedTpl = templates.find((t) => t.id === templateId)
+    setFormData((prev) => ({
+      ...prev,
+      templateId,
+      subject: selectedTpl ? selectedTpl.subject : prev.subject,
+    }))
+    if (formValidationErrors.templateId) {
+      setFormValidationErrors((prev) => {
+        const next = { ...prev }
+        delete next.templateId
+        return next
+      })
+    }
+  }
+
+  const handleInputChange = (field: keyof CampaignFormState, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+    if (formValidationErrors[field]) {
+      setFormValidationErrors((prev) => {
+        const next = { ...prev }
+        delete next[field]
+        return next
+      })
+    }
+  }
+
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {}
+    if (!formData.name.trim()) {
+      errors.name = 'Campaign name is required'
+    }
+    if (!formData.templateId.trim()) {
+      errors.templateId = 'Please select an email template'
+    }
+    setFormValidationErrors(errors)
+    return Object.keys(errors).length === 0
+  }
+
+  const handleCreateSubmit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (isSubmitting) return
+    if (!validateForm()) return
+
+    setIsSubmitting(true)
+    setFormError(null)
+
+    try {
+      await campaignService.createCampaign(
+        {
+          name: formData.name.trim(),
+          templateId: formData.templateId.trim(),
+          campaignType: formData.campaignType || 'broadcast',
+          status: 'draft',
+        },
+        apiClient
+      )
+
+      // Successful creation: reset & close composer, then refresh campaign list
+      setFormData(initialFormState)
+      setFormValidationErrors({})
+      setIsComposerOpen(false)
+      await loadCampaigns()
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.isUnauthorized || err.statusCode === 401) {
+          setFormError('Unauthorized (401): Session expired or invalid.')
+        } else if (err.isForbidden || err.statusCode === 403) {
+          setFormError('Forbidden (403): You do not have permission to create campaigns.')
+        } else if (err.statusCode === 400) {
+          setFormError(`Validation error: ${err.message}`)
+        } else {
+          setFormError(err.message || 'Failed to create campaign. Please try again.')
+        }
+      } else {
+        const msg = err instanceof Error ? err.message : 'An unexpected error occurred while creating the campaign.'
+        setFormError(msg)
+      }
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  const selectedTemplate = templates.find((t) => t.id === formData.templateId)
+
   return (
     <section className="gm-admin-page">
       <div className="gm-admin-page__header">
         <div>
           <h1 className="gm-admin-page__title">Campaigns</h1>
-          <p className="gm-admin-page__description">Send a message immediately to users matching the selected audience filters.</p>
+          <p className="gm-admin-page__description">
+            Manage your message campaigns and send announcements to targeted audiences.
+          </p>
         </div>
+
+        <button
+          type="button"
+          className="gm-admin-btn gm-admin-btn--primary"
+          onClick={toggleComposer}
+          disabled={isSubmitting}
+        >
+          {isComposerOpen ? 'Close Composer' : 'New Campaign'}
+        </button>
       </div>
 
-      <div style={{ display: 'grid', gap: '1.25rem', gridTemplateColumns: '1.3fr 0.9fr' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div className="gm-admin-card">
-            <h2 className="gm-admin-card__title">Campaign name</h2>
-            <input className="gm-admin-input" placeholder="Enter campaign name" />
+      {/* Error alert states */}
+      {error && (
+        <div
+          className="gm-admin-warning"
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '1rem',
+            borderColor:
+              error.type === 'forbidden'
+                ? 'rgba(234, 179, 8, 0.4)'
+                : error.type === 'unauthorized'
+                  ? 'rgba(248, 113, 113, 0.4)'
+                  : 'rgba(255, 0, 0, 0.2)',
+            background:
+              error.type === 'forbidden'
+                ? 'rgba(234, 179, 8, 0.12)'
+                : error.type === 'unauthorized'
+                  ? 'rgba(239, 68, 68, 0.12)'
+                  : 'rgba(255, 0, 0, 0.12)',
+            color: error.type === 'forbidden' ? '#fef08a' : '#ffd3d3',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            <strong data-testid="error-title">
+              {error.type === 'unauthorized' && 'Unauthorized (401)'}
+              {error.type === 'forbidden' && 'Forbidden (403)'}
+              {error.type === 'api' && 'Campaign API Error'}
+              {error.type === 'network' && 'Connection Error'}
+            </strong>
+            <span data-testid="error-message">{error.message}</span>
           </div>
 
-          <div className="gm-admin-card">
-            <h2 className="gm-admin-card__title">Subject</h2>
-            <input className="gm-admin-input" placeholder="Enter email subject" />
-          </div>
-
-          <div className="gm-admin-card">
-            <h2 className="gm-admin-card__title">Email template selector</h2>
-            <select className="gm-admin-select">
-              <option>Select template</option>
-              <option>Welcome email</option>
-              <option>Reminder email</option>
-              <option>Promotional email</option>
-            </select>
-          </div>
-
-          <div className="gm-admin-card">
-            <h2 className="gm-admin-card__title">Audience filters</h2>
-            <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
-              {filterOptions.map((filter) => (
-                <div key={filter.label} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '0.95rem' }}>{filter.label}</label>
-                  <input className="gm-admin-input" placeholder={filter.value} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div className="gm-admin-card">
-            <h2 className="gm-admin-card__title">Preview</h2>
-            <div className="gm-admin-empty">
-              <p style={{ margin: 0, color: '#cbd5e1' }}>Preview content will appear here.</p>
-            </div>
-          </div>
-
-          <button type="button" className="gm-admin-btn gm-admin-btn--primary">
-            Send
+          <button
+            type="button"
+            className="gm-admin-btn"
+            onClick={() => void loadCampaigns()}
+          >
+            Retry
           </button>
         </div>
-      </div>
+      )}
+
+      {/* New Campaign Composer (Collapsible/Toggleable Form) */}
+      {isComposerOpen && (
+        <div className="gm-admin-card" style={{ marginBottom: '0.5rem' }}>
+          <h2 className="gm-admin-card__title">Create Campaign</h2>
+
+          {formError && (
+            <div
+              className="gm-admin-warning"
+              role="alert"
+              data-testid="composer-error"
+              style={{ marginBottom: '1.25rem' }}
+            >
+              {formError}
+            </div>
+          )}
+
+          <form onSubmit={(e) => void handleCreateSubmit(e)}>
+            <div style={{ display: 'grid', gap: '1.25rem', gridTemplateColumns: '1.3fr 0.9fr', marginTop: '1rem' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                    Campaign name <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <input
+                    name="name"
+                    className="gm-admin-input"
+                    placeholder="Enter campaign name"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    disabled={isSubmitting}
+                  />
+                  {formValidationErrors.name && (
+                    <span style={{ color: '#f87171', fontSize: '0.85rem', display: 'block', marginTop: '0.25rem' }}>
+                      {formValidationErrors.name}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                    Subject
+                  </label>
+                  <input
+                    name="subject"
+                    className="gm-admin-input"
+                    placeholder="Enter email subject"
+                    value={formData.subject}
+                    onChange={(e) => handleInputChange('subject', e.target.value)}
+                    disabled={isSubmitting}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                    Email template selector <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <select
+                    name="templateId"
+                    className="gm-admin-select"
+                    value={formData.templateId}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
+                    disabled={isSubmitting}
+                  >
+                    <option value="">Select template</option>
+                    {templates.map((tpl) => (
+                      <option key={tpl.id} value={tpl.id}>
+                        {tpl.name} ({tpl.templateKey})
+                      </option>
+                    ))}
+                  </select>
+                  {formValidationErrors.templateId && (
+                    <span style={{ color: '#f87171', fontSize: '0.85rem', display: 'block', marginTop: '0.25rem' }}>
+                      {formValidationErrors.templateId}
+                    </span>
+                  )}
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                    Audience filters
+                  </label>
+                  <div style={{ display: 'grid', gap: '0.75rem', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                    {filterOptions.map((filter) => (
+                      <div key={filter.name} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        <label style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{filter.label}</label>
+                        <input
+                          name={filter.name}
+                          className="gm-admin-input"
+                          placeholder={filter.value}
+                          value={formData[filter.name as keyof CampaignFormState]}
+                          onChange={(e) => handleInputChange(filter.name as keyof CampaignFormState, e.target.value)}
+                          disabled={isSubmitting}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div>
+                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                    Preview
+                  </label>
+                  <div className="gm-admin-empty" style={{ overflow: 'auto', maxHeight: '18rem' }}>
+                    {selectedTemplate ? (
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontWeight: 600, color: '#ffffff', marginBottom: '0.5rem' }}>
+                          Subject: {selectedTemplate.subject}
+                        </div>
+                        <div
+                          style={{ color: '#cbd5e1', fontSize: '0.9rem', lineHeight: 1.5 }}
+                          dangerouslySetInnerHTML={{ __html: selectedTemplate.htmlBody }}
+                        />
+                      </div>
+                    ) : (
+                      <p style={{ margin: 0, color: '#cbd5e1' }}>Preview content will appear here.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: 'auto' }}>
+                  <button
+                    type="button"
+                    className="gm-admin-btn"
+                    onClick={toggleComposer}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="gm-admin-btn gm-admin-btn--primary"
+                    disabled={isSubmitting}
+                    style={{ opacity: isSubmitting ? 0.7 : 1 }}
+                  >
+                    {isSubmitting ? 'Sending...' : 'Send'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Main Campaign List States */}
+      {isLoading ? (
+        <div className="gm-admin-card" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
+          <p className="gm-admin-muted" style={{ margin: 0 }}>
+            Loading campaigns...
+          </p>
+        </div>
+      ) : campaigns.length === 0 && !error ? (
+        <div className="gm-admin-card">
+          <div
+            className="gm-admin-empty"
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '12rem' }}
+          >
+            <p style={{ margin: 0, color: '#cbd5e1' }}>
+              No campaigns found. Click "New Campaign" to create one.
+            </p>
+          </div>
+        </div>
+      ) : campaigns.length > 0 ? (
+        <div className="gm-admin-card" style={{ overflowX: 'auto', padding: 0 }}>
+          <table className="gm-admin-table">
+            <thead>
+              <tr>
+                <th>Campaign</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Scheduled / Created</th>
+              </tr>
+            </thead>
+            <tbody>
+              {campaigns.map((campaign) => (
+                <tr key={campaign.id}>
+                  <td>
+                    <div style={{ fontWeight: 600 }}>{campaign.name}</div>
+                    {campaign.templateId && (
+                      <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
+                        Template: {campaign.templateId}
+                      </div>
+                    )}
+                  </td>
+                  <td>
+                    <span style={{ textTransform: 'capitalize' }}>
+                      {campaign.campaignType || 'broadcast'}
+                    </span>
+                  </td>
+                  <td>
+                    <span
+                      data-testid={`status-badge-${campaign.id}`}
+                      style={{
+                        display: 'inline-block',
+                        padding: '0.2rem 0.55rem',
+                        borderRadius: '4px',
+                        fontSize: '0.8rem',
+                        fontWeight: 600,
+                        textTransform: 'capitalize',
+                        ...getStatusBadgeStyle(campaign.status),
+                      }}
+                    >
+                      {campaign.status.replace(/_/g, ' ')}
+                    </span>
+                  </td>
+                  <td>
+                    <div>{formatDateTime(campaign.scheduledAt || campaign.createdAt)}</div>
+                    <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
+                      Created: {formatDateTime(campaign.createdAt)}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </section>
   )
 }
