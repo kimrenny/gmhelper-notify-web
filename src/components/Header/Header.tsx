@@ -58,9 +58,12 @@ function Header() {
     setShowUserMenu((value) => !value)
   }
 
-  const navigateToHome = (event?: ReactMouseEvent<HTMLAnchorElement>) => {
+  const mainWebUrl =
+    import.meta.env.VITE_MAIN_WEB_URL ?? 'http://localhost:4200'
+
+  const navigateToMainApp = (event?: ReactMouseEvent<HTMLAnchorElement>) => {
     event?.preventDefault()
-    navigate('/')
+    window.location.href = mainWebUrl
   }
 
   const navigateToRegistration = (type: 'signup' | 'login') => {
@@ -97,7 +100,12 @@ function Header() {
   return (
     <header className="app-header">
       <div className="logo-container">
-        <a className="gm-logo" href="#" onClick={navigateToHome} />
+        <a
+          className="gm-logo"
+          href={mainWebUrl}
+          onClick={navigateToMainApp}
+          aria-label="GMHelper Home"
+        />
       </div>
 
       <div className="auth-and-language">

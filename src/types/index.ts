@@ -40,3 +40,6 @@ export interface UpdateTemplateInput {
   status?: TemplateStatus | string
   version?: number
 }
+
+export * from './auth'
+
