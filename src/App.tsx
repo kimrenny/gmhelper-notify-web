@@ -1,4 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { AuthProvider } from './context/AuthContext'
+import { ProtectedRoute } from './components'
 import AppLayout from './layouts/AppLayout'
 import AdminLayout from './layouts/AdminLayout/AdminLayout'
 import {
@@ -13,8 +15,10 @@ import {
 
 function App() {
   return (
-    <AppLayout>
-      <Routes>
+    <AuthProvider>
+      <ProtectedRoute>
+        <AppLayout>
+          <Routes>
         <Route
           path="/"
           element={
@@ -75,8 +79,10 @@ function App() {
             </AdminLayout>
           }
         />
-      </Routes>
-    </AppLayout>
+        </Routes>
+      </AppLayout>
+      </ProtectedRoute>
+    </AuthProvider>
   )
 }
 

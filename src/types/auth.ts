@@ -36,3 +36,12 @@ export interface UnauthenticatedSession {
 }
 
 export type AuthSession = AuthenticatedSession | UnauthenticatedSession
+
+export interface AuthContextValue {
+  user: UserDetails | null
+  accessToken: string | null
+  role: 'Admin' | 'Owner' | null
+  isAuthenticated: boolean
+  isLoading: boolean
+  logout: () => Promise<void>
+}
