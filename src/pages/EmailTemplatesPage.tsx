@@ -1,4 +1,5 @@
 import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useApiClient } from '../hooks/useApiClient'
 import { ApiError, templateService } from '../services'
 import type { CreateTemplateInput, EmailTemplate, UpdateTemplateInput } from '../types'
 
@@ -41,6 +42,7 @@ function formatDateTime(dateStr: string): string {
 }
 
 function EmailTemplatesPage() {
+  const apiClient = useApiClient()
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
@@ -62,20 +64,30 @@ function EmailTemplatesPage() {
     setIsLoading(true)
     setListError(null)
     try {
-      const data = await templateService.getTemplates(signal)
-      setTemplates(data)
+      const data = await templateService.getTemplates(apiClient, signal)
+      setTemplates(data ?? [])
     } catch (err) {
       if (signal?.aborted) {
         return
       }
-      const message = err instanceof Error ? err.message : 'Failed to load email templates'
-      setListError(message)
+      if (err instanceof ApiError) {
+        if (err.isUnauthorized || err.statusCode === 401) {
+          setListError('Unauthorized (401): You do not have access to email templates. Please verify your authentication.')
+        } else if (err.isForbidden || err.statusCode === 403) {
+          setListError('Forbidden (403): You do not have permission to access email templates.')
+        } else {
+          setListError(err.message || 'Failed to load email templates')
+        }
+      } else {
+        const message = err instanceof Error ? err.message : 'Failed to load email templates'
+        setListError(message)
+      }
     } finally {
       if (!signal?.aborted) {
         setIsLoading(false)
       }
     }
-  }, [])
+  }, [apiClient])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -175,7 +187,7 @@ function EmailTemplatesPage() {
           version: formData.version,
         }
 
-        const updated = await templateService.updateTemplate(editingTemplate.id, updateData)
+        const updated = await templateService.updateTemplate(editingTemplate.id, updateData, apiClient)
         setTemplates((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
       } else {
         const createData: CreateTemplateInput = {
@@ -189,7 +201,7 @@ function EmailTemplatesPage() {
           version: formData.version,
         }
 
-        const created = await templateService.createTemplate(createData)
+        const created = await templateService.createTemplate(createData, apiClient)
         setTemplates((prev) => [created, ...prev])
       }
 
@@ -198,7 +210,11 @@ function EmailTemplatesPage() {
       setFormData(initialFormState)
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.statusCode === 409 || err.code === 'CONFLICT') {
+        if (err.isUnauthorized || err.statusCode === 401) {
+          setFormError('Unauthorized (401): Session expired or invalid.')
+        } else if (err.isForbidden || err.statusCode === 403) {
+          setFormError('Forbidden (403): You do not have permission to modify templates.')
+        } else if (err.statusCode === 409 || err.code === 'CONFLICT') {
           setFormError('A template with this key, locale, and version already exists.')
         } else if (err.statusCode === 400) {
           setFormError(`Validation error: ${err.message}`)
@@ -231,12 +247,16 @@ function EmailTemplatesPage() {
     setDeleteError(null)
 
     try {
-      await templateService.deleteTemplate(templateToDelete.id)
+      await templateService.deleteTemplate(templateToDelete.id, apiClient)
       setTemplates((prev) => prev.filter((t) => t.id !== templateToDelete.id))
       setTemplateToDelete(null)
     } catch (err) {
       if (err instanceof ApiError) {
-        if (err.statusCode === 409 || err.code === 'CONFLICT') {
+        if (err.isUnauthorized || err.statusCode === 401) {
+          setDeleteError('Unauthorized (401): Session expired or invalid.')
+        } else if (err.isForbidden || err.statusCode === 403) {
+          setDeleteError('Forbidden (403): You do not have permission to delete templates.')
+        } else if (err.statusCode === 409 || err.code === 'CONFLICT') {
           setDeleteError('This template cannot currently be deleted because it is in use by campaigns or automations.')
         } else if (err.statusCode === 404) {
           setDeleteError('Template not found. It may have already been deleted.')
@@ -270,9 +290,10 @@ function EmailTemplatesPage() {
       {listError && (
         <div
           className="gm-admin-warning"
+          role="alert"
           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}
         >
-          <span>{listError}</span>
+          <span data-testid="templates-error-message">{listError}</span>
           <button type="button" className="gm-admin-btn" onClick={() => void loadTemplates()}>
             Retry
           </button>
@@ -297,7 +318,7 @@ function EmailTemplatesPage() {
           </p>
 
           {deleteError && (
-            <div className="gm-admin-warning" style={{ marginBottom: '1rem' }}>
+            <div className="gm-admin-warning" role="alert" style={{ marginBottom: '1rem' }}>
               {deleteError}
             </div>
           )}
@@ -332,7 +353,7 @@ function EmailTemplatesPage() {
           </h2>
 
           {formError && (
-            <div className="gm-admin-warning" style={{ marginBottom: '1.25rem' }}>
+            <div className="gm-admin-warning" role="alert" style={{ marginBottom: '1.25rem' }}>
               {formError}
             </div>
           )}
