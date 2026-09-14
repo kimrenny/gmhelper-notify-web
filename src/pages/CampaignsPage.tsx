@@ -87,6 +87,8 @@ function CampaignsPage() {
 
   // Composer / Form state
   const [isComposerOpen, setIsComposerOpen] = useState(false)
+  const [editingCampaignId, setEditingCampaignId] = useState<string | null>(null)
+  const [isLoadingCampaign, setIsLoadingCampaign] = useState(false)
   const [formData, setFormData] = useState<CampaignFormState>(initialFormState)
   const [formValidationErrors, setFormValidationErrors] = useState<Record<string, string>>({})
   const [formError, setFormError] = useState<string | null>(null)
@@ -155,11 +157,71 @@ function CampaignsPage() {
   }, [loadCampaigns, loadTemplates])
 
   const toggleComposer = () => {
-    if (isSubmitting) return
-    setIsComposerOpen((prev) => !prev)
-    setFormData(initialFormState)
-    setFormValidationErrors({})
+    if (isSubmitting || isLoadingCampaign) return
+    if (isComposerOpen) {
+      setIsComposerOpen(false)
+      setEditingCampaignId(null)
+      setFormData(initialFormState)
+      setFormValidationErrors({})
+      setFormError(null)
+    } else {
+      setEditingCampaignId(null)
+      setFormData(initialFormState)
+      setFormValidationErrors({})
+      setFormError(null)
+      setIsComposerOpen(true)
+    }
+  }
+
+  const handleOpenEdit = async (campaign: Campaign) => {
+    if (isSubmitting || isLoadingCampaign) return
+    setIsComposerOpen(true)
+    setEditingCampaignId(campaign.id)
     setFormError(null)
+    setFormValidationErrors({})
+
+    const matchingTpl = templates.find((t) => t.id === campaign.templateId)
+
+    // Populate immediate values
+    setFormData({
+      name: campaign.name || '',
+      subject: matchingTpl ? matchingTpl.subject : '',
+      templateId: campaign.templateId || '',
+      campaignType: campaign.campaignType || 'broadcast',
+      roleFilter: 'All roles',
+      registrationDateFilter: 'Any date',
+      emailConfirmedFilter: 'Any',
+      languageFilter: 'All',
+      accountStatusFilter: 'Active',
+    })
+
+    // Load fresh details by ID
+    setIsLoadingCampaign(true)
+    try {
+      const freshCampaign = await campaignService.getCampaign(campaign.id, apiClient)
+      const freshMatchingTpl = templates.find((t) => t.id === freshCampaign.templateId)
+      setFormData((prev) => ({
+        ...prev,
+        name: freshCampaign.name || prev.name,
+        templateId: freshCampaign.templateId || prev.templateId,
+        campaignType: freshCampaign.campaignType || prev.campaignType,
+        subject: freshMatchingTpl ? freshMatchingTpl.subject : prev.subject,
+      }))
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.isUnauthorized || err.statusCode === 401) {
+          setFormError('Unauthorized (401): Session expired or invalid.')
+        } else if (err.isForbidden || err.statusCode === 403) {
+          setFormError('Forbidden (403): You do not have permission to view this campaign.')
+        } else {
+          setFormError(err.message || 'Failed to load campaign details.')
+        }
+      } else {
+        setFormError('An unexpected error occurred while loading campaign details.')
+      }
+    } finally {
+      setIsLoadingCampaign(false)
+    }
   }
 
   const handleTemplateChange = (templateId: string) => {
@@ -204,28 +266,41 @@ function CampaignsPage() {
     return Object.keys(errors).length === 0
   }
 
-  const handleCreateSubmit = async (e: FormEvent) => {
+  const handleFormSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (isSubmitting) return
+    if (isSubmitting || isLoadingCampaign) return
     if (!validateForm()) return
 
     setIsSubmitting(true)
     setFormError(null)
 
     try {
-      await campaignService.createCampaign(
-        {
-          name: formData.name.trim(),
-          templateId: formData.templateId.trim(),
-          campaignType: formData.campaignType || 'broadcast',
-          status: 'draft',
-        },
-        apiClient
-      )
+      if (editingCampaignId) {
+        await campaignService.updateCampaign(
+          editingCampaignId,
+          {
+            name: formData.name.trim(),
+            templateId: formData.templateId.trim(),
+            campaignType: formData.campaignType || 'broadcast',
+          },
+          apiClient
+        )
+      } else {
+        await campaignService.createCampaign(
+          {
+            name: formData.name.trim(),
+            templateId: formData.templateId.trim(),
+            campaignType: formData.campaignType || 'broadcast',
+            status: 'draft',
+          },
+          apiClient
+        )
+      }
 
-      // Successful creation: reset & close composer, then refresh campaign list
+      // Successful submit: reset & close composer, then refresh campaign list
       setFormData(initialFormState)
       setFormValidationErrors({})
+      setEditingCampaignId(null)
       setIsComposerOpen(false)
       await loadCampaigns()
     } catch (err) {
@@ -233,14 +308,23 @@ function CampaignsPage() {
         if (err.isUnauthorized || err.statusCode === 401) {
           setFormError('Unauthorized (401): Session expired or invalid.')
         } else if (err.isForbidden || err.statusCode === 403) {
-          setFormError('Forbidden (403): You do not have permission to create campaigns.')
+          setFormError(
+            editingCampaignId
+              ? 'Forbidden (403): You do not have permission to modify campaigns.'
+              : 'Forbidden (403): You do not have permission to create campaigns.'
+          )
         } else if (err.statusCode === 400) {
           setFormError(`Validation error: ${err.message}`)
         } else {
-          setFormError(err.message || 'Failed to create campaign. Please try again.')
+          setFormError(
+            err.message ||
+              (editingCampaignId
+                ? 'Failed to update campaign. Please try again.'
+                : 'Failed to create campaign. Please try again.')
+          )
         }
       } else {
-        const msg = err instanceof Error ? err.message : 'An unexpected error occurred while creating the campaign.'
+        const msg = err instanceof Error ? err.message : 'An unexpected error occurred while saving the campaign.'
         setFormError(msg)
       }
     } finally {
@@ -264,7 +348,7 @@ function CampaignsPage() {
           type="button"
           className="gm-admin-btn gm-admin-btn--primary"
           onClick={toggleComposer}
-          disabled={isSubmitting}
+          disabled={isSubmitting || isLoadingCampaign}
         >
           {isComposerOpen ? 'Close Composer' : 'New Campaign'}
         </button>
@@ -315,10 +399,12 @@ function CampaignsPage() {
         </div>
       )}
 
-      {/* New Campaign Composer (Collapsible/Toggleable Form) */}
+      {/* Campaign Composer / Editor (Collapsible/Toggleable Form) */}
       {isComposerOpen && (
         <div className="gm-admin-card" style={{ marginBottom: '0.5rem' }}>
-          <h2 className="gm-admin-card__title">Create Campaign</h2>
+          <h2 className="gm-admin-card__title">
+            {editingCampaignId ? 'Edit Campaign' : 'Create Campaign'}
+          </h2>
 
           {formError && (
             <div
@@ -331,7 +417,7 @@ function CampaignsPage() {
             </div>
           )}
 
-          <form onSubmit={(e) => void handleCreateSubmit(e)}>
+          <form onSubmit={(e) => void handleFormSubmit(e)}>
             <div style={{ display: 'grid', gap: '1.25rem', gridTemplateColumns: '1.3fr 0.9fr', marginTop: '1rem' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div>
@@ -344,7 +430,7 @@ function CampaignsPage() {
                     placeholder="Enter campaign name"
                     value={formData.name}
                     onChange={(e) => handleInputChange('name', e.target.value)}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isLoadingCampaign}
                   />
                   {formValidationErrors.name && (
                     <span style={{ color: '#f87171', fontSize: '0.85rem', display: 'block', marginTop: '0.25rem' }}>
@@ -363,7 +449,7 @@ function CampaignsPage() {
                     placeholder="Enter email subject"
                     value={formData.subject}
                     onChange={(e) => handleInputChange('subject', e.target.value)}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isLoadingCampaign}
                   />
                 </div>
 
@@ -376,7 +462,7 @@ function CampaignsPage() {
                     className="gm-admin-select"
                     value={formData.templateId}
                     onChange={(e) => handleTemplateChange(e.target.value)}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isLoadingCampaign}
                   >
                     <option value="">Select template</option>
                     {templates.map((tpl) => (
@@ -406,7 +492,7 @@ function CampaignsPage() {
                           placeholder={filter.value}
                           value={formData[filter.name as keyof CampaignFormState]}
                           onChange={(e) => handleInputChange(filter.name as keyof CampaignFormState, e.target.value)}
-                          disabled={isSubmitting}
+                          disabled={isSubmitting || isLoadingCampaign}
                         />
                       </div>
                     ))}
@@ -441,17 +527,23 @@ function CampaignsPage() {
                     type="button"
                     className="gm-admin-btn"
                     onClick={toggleComposer}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isLoadingCampaign}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     className="gm-admin-btn gm-admin-btn--primary"
-                    disabled={isSubmitting}
-                    style={{ opacity: isSubmitting ? 0.7 : 1 }}
+                    disabled={isSubmitting || isLoadingCampaign}
+                    style={{ opacity: isSubmitting || isLoadingCampaign ? 0.7 : 1 }}
                   >
-                    {isSubmitting ? 'Sending...' : 'Send'}
+                    {isSubmitting
+                      ? editingCampaignId
+                        ? 'Saving...'
+                        : 'Sending...'
+                      : editingCampaignId
+                        ? 'Save Changes'
+                        : 'Send'}
                   </button>
                 </div>
               </div>
@@ -487,6 +579,7 @@ function CampaignsPage() {
                 <th>Type</th>
                 <th>Status</th>
                 <th>Scheduled / Created</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -526,6 +619,17 @@ function CampaignsPage() {
                     <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
                       Created: {formatDateTime(campaign.createdAt)}
                     </div>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="gm-admin-btn"
+                      onClick={() => void handleOpenEdit(campaign)}
+                      disabled={isSubmitting || isLoadingCampaign}
+                      data-testid={`edit-campaign-btn-${campaign.id}`}
+                    >
+                      Edit
+                    </button>
                   </td>
                 </tr>
               ))}

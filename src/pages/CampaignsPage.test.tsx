@@ -565,4 +565,374 @@ describe('CampaignsPage component', () => {
       expect(screen.getByTestId('composer-error').textContent).toContain('Failed to fetch')
     })
   })
+
+  it('13. Opening an existing campaign loads campaign details by ID and populates form', async () => {
+    const mockCampaign = {
+      id: 'camp-edit-1',
+      name: 'Spring Promo 2026',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-edit-1')) {
+        return Promise.resolve(new Response(JSON.stringify(mockCampaign), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Spring Promo 2026')).toBeDefined()
+    })
+
+    const editBtn = screen.getByTestId('edit-campaign-btn-camp-edit-1')
+    await act(async () => {
+      fireEvent.click(editBtn)
+    })
+
+    // Verify GET /api/v1/campaigns/camp-edit-1 was made with Bearer token
+    const getDetailsCall = mockFetch.mock.calls.find(
+      (call) => call[0].includes('/api/v1/campaigns/camp-edit-1') && (!call[1]?.method || call[1]?.method === 'GET')
+    )
+    expect(getDetailsCall).toBeDefined()
+    const headers = new Headers(getDetailsCall![1].headers)
+    expect(headers.get('Authorization')).toBe('Bearer sample-access-token-xyz')
+
+    // Verify composer title and populated values
+    expect(screen.getByText('Edit Campaign')).toBeDefined()
+    const nameInput = screen.getByPlaceholderText('Enter campaign name') as HTMLInputElement
+    expect(nameInput.value).toBe('Spring Promo 2026')
+    const templateSelect = screen.getByRole('combobox') as HTMLSelectElement
+    expect(templateSelect.value).toBe('tpl-101')
+    expect(screen.getByText('Subject: Welcome to our platform!')).toBeDefined()
+    expect(screen.getByRole('button', { name: /Save Changes/i })).toBeDefined()
+  })
+
+  it('14. Submitting updated campaign sends PUT to /api/v1/campaigns/{id}, refreshes list, and closes composer', async () => {
+    let currentCampaign = {
+      id: 'camp-update-1',
+      name: 'Old Campaign Name',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-update-1') && options?.method === 'PUT') {
+        const payload = JSON.parse(options.body as string)
+        currentCampaign = { ...currentCampaign, ...payload }
+        return Promise.resolve(new Response(JSON.stringify(currentCampaign), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-update-1')) {
+        return Promise.resolve(new Response(JSON.stringify(currentCampaign), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([currentCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Old Campaign Name')).toBeDefined()
+    })
+
+    // Open edit composer
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('edit-campaign-btn-camp-update-1'))
+    })
+
+    expect(screen.getByText('Edit Campaign')).toBeDefined()
+
+    // Modify name
+    const nameInput = screen.getByPlaceholderText('Enter campaign name')
+    fireEvent.change(nameInput, { target: { value: 'Brand New Campaign Name' } })
+
+    // Submit form
+    const saveBtn = screen.getByRole('button', { name: /Save Changes/i })
+    await act(async () => {
+      fireEvent.click(saveBtn)
+    })
+
+    // Verify PUT request
+    const putCall = mockFetch.mock.calls.find(
+      (call) => call[0].includes('/api/v1/campaigns/camp-update-1') && call[1]?.method === 'PUT'
+    )
+    expect(putCall).toBeDefined()
+    const requestBody = JSON.parse(putCall![1].body as string)
+    expect(requestBody).toEqual({
+      name: 'Brand New Campaign Name',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+    })
+    const headers = new Headers(putCall![1].headers)
+    expect(headers.get('Authorization')).toBe('Bearer sample-access-token-xyz')
+
+    // Verify composer closed and list refreshed with new name
+    await waitFor(() => {
+      expect(screen.queryByText('Edit Campaign')).toBeNull()
+      expect(screen.getByText('Brand New Campaign Name')).toBeDefined()
+    })
+  })
+
+  it('15. Prevents duplicate submissions while saving changes in edit mode', async () => {
+    let putCallCount = 0
+    let resolvePut: (res: Response) => void
+    const putPromise = new Promise<Response>((resolve) => {
+      resolvePut = resolve
+    })
+
+    const initialCampaign = {
+      id: 'camp-dup-1',
+      name: 'Duplicate Test Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-dup-1') && options?.method === 'PUT') {
+        putCallCount++
+        return putPromise
+      }
+      if (url.includes('/api/v1/campaigns/camp-dup-1')) {
+        return Promise.resolve(new Response(JSON.stringify(initialCampaign), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([initialCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Duplicate Test Campaign')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('edit-campaign-btn-camp-dup-1'))
+    })
+
+    const saveBtn = screen.getByRole('button', { name: /Save Changes/i })
+
+    // Click submit first time
+    await act(async () => {
+      fireEvent.click(saveBtn)
+    })
+
+    expect(putCallCount).toBe(1)
+    expect(screen.getByRole('button', { name: /Saving\.\.\./i })).toBeDefined()
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(true)
+
+    // Click submit second time while in flight
+    await act(async () => {
+      fireEvent.click(saveBtn)
+    })
+    expect(putCallCount).toBe(1)
+
+    // Resolve PUT request
+    await act(async () => {
+      resolvePut!(new Response(JSON.stringify(initialCampaign), { status: 200 }))
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Edit Campaign')).toBeNull()
+    })
+  })
+
+  it('16. Handles 400 Bad Request error during campaign update', async () => {
+    const campaign = {
+      id: 'camp-bad-1',
+      name: 'Bad Input Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-bad-1') && options?.method === 'PUT') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                code: 'BAD_REQUEST',
+                message: 'Invalid campaign status transition',
+              },
+            }),
+            {
+              status: 400,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        )
+      }
+      if (url.includes('/api/v1/campaigns/camp-bad-1')) {
+        return Promise.resolve(new Response(JSON.stringify(campaign), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([campaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Bad Input Campaign')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('edit-campaign-btn-camp-bad-1'))
+    })
+
+    const saveBtn = screen.getByRole('button', { name: /Save Changes/i })
+    await act(async () => {
+      fireEvent.click(saveBtn)
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-error').textContent).toContain(
+        'Validation error: Invalid campaign status transition'
+      )
+    })
+  })
+
+  it('17. Handles 401 Unauthorized and 403 Forbidden errors during campaign update', async () => {
+    const campaign = {
+      id: 'camp-auth-err',
+      name: 'Auth Test Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    let putStatus = 401
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-auth-err') && options?.method === 'PUT') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                code: putStatus === 401 ? 'UNAUTHORIZED' : 'FORBIDDEN',
+                message: putStatus === 401 ? 'Session expired' : 'Insufficient permissions',
+              },
+            }),
+            {
+              status: putStatus,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        )
+      }
+      if (url.includes('/api/v1/campaigns/camp-auth-err')) {
+        return Promise.resolve(new Response(JSON.stringify(campaign), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([campaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Auth Test Campaign')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('edit-campaign-btn-camp-auth-err'))
+    })
+
+    // Test 401
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-error').textContent).toContain('Unauthorized (401)')
+    })
+
+    // Test 403
+    putStatus = 403
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-error').textContent).toContain('Forbidden (403)')
+    })
+  })
+
+  it('18. Handles failure when loading campaign details by ID', async () => {
+    const campaign = {
+      id: 'camp-fail-get',
+      name: 'Get Failure Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-fail-get')) {
+        return Promise.reject(new TypeError('Failed to load campaign'))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([campaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Get Failure Campaign')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('edit-campaign-btn-camp-fail-get'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('composer-error').textContent).toContain('Failed to load campaign')
+    })
+  })
 })
