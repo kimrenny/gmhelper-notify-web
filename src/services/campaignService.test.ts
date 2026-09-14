@@ -155,6 +155,61 @@ describe('campaignService', () => {
     expect(calledOptions.method).toBe('DELETE')
   })
 
+  it('scheduleCampaign sends POST to /api/v1/campaigns/{id}/schedule with scheduledAt', async () => {
+    const scheduledResponse: Campaign = {
+      id: 'camp-123',
+      name: 'Autumn Promo',
+      status: 'scheduled',
+      scheduledAt: '2026-10-01T15:30:00Z',
+      createdAt: '2026-09-14T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(scheduledResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    const client = createApiClient('token-sched')
+    const result = await campaignService.scheduleCampaign('camp-123', '2026-10-01T15:30:00Z', client)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0]
+    expect(calledUrl).toContain('/api/v1/campaigns/camp-123/schedule')
+    expect(calledOptions.method).toBe('POST')
+    expect(calledOptions.body).toBe(JSON.stringify({ scheduledAt: '2026-10-01T15:30:00Z' }))
+    expect(result).toEqual(scheduledResponse)
+  })
+
+  it('cancelCampaign sends POST to /api/v1/campaigns/{id}/cancel', async () => {
+    const cancelledResponse: Campaign = {
+      id: 'camp-123',
+      name: 'Autumn Promo',
+      status: 'cancelled',
+      createdAt: '2026-09-14T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(cancelledResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    const client = createApiClient('token-cancel')
+    const result = await campaignService.cancelCampaign('camp-123', client)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0]
+    expect(calledUrl).toContain('/api/v1/campaigns/camp-123/cancel')
+    expect(calledOptions.method).toBe('POST')
+    expect(calledOptions.body).toBe(JSON.stringify({}))
+    expect(result).toEqual(cancelledResponse)
+  })
+
   it('passes AbortSignal to the underlying fetch call', async () => {
     const controller = new AbortController()
     const mockFetch = vi.fn().mockResolvedValue(

@@ -1208,4 +1208,371 @@ describe('CampaignsPage component', () => {
       expect(screen.getByTestId('delete-error').textContent).toContain('Campaign not found')
     })
   })
+
+  it('23. Draft campaign displays Schedule button, opens schedule modal, and validates empty or past date/time', async () => {
+    const mockDraftCampaign = {
+      id: 'camp-draft-1',
+      name: 'Autumn Special',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-14T10:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockDraftCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Autumn Special')).toBeDefined()
+    })
+
+    // Verify Schedule button is visible for draft campaign
+    const scheduleBtn = screen.getByTestId('schedule-campaign-btn-camp-draft-1')
+    expect(scheduleBtn).toBeDefined()
+    expect(scheduleBtn.textContent).toBe('Schedule')
+
+    // Open schedule modal
+    await act(async () => {
+      fireEvent.click(scheduleBtn)
+    })
+
+    expect(screen.getByTestId('schedule-modal-card')).toBeDefined()
+    expect(screen.getByText(/Select a future date and time to schedule campaign/i)).toBeDefined()
+
+    // 1. Submit with empty date -> validation error
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-schedule-btn'))
+    })
+
+    expect(screen.getByTestId('schedule-error').textContent).toBe('Scheduled date and time is required.')
+
+    // 2. Submit with past date -> validation error
+    const input = screen.getByTestId('schedule-datetime-input')
+    fireEvent.change(input, { target: { value: '2020-01-01T10:00' } })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-schedule-btn'))
+    })
+
+    expect(screen.getByTestId('schedule-error').textContent).toBe('Scheduled date and time must be in the future.')
+
+    // 3. Cancel button closes modal
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('cancel-schedule-modal-btn'))
+    })
+
+    expect(screen.queryByTestId('schedule-modal-card')).toBeNull()
+  })
+
+  it('24. Successfully schedules a draft campaign: converts local time to UTC ISO-8601 and updates status to scheduled', async () => {
+    const mockDraftCampaign = {
+      id: 'camp-draft-2',
+      name: 'Black Friday 2026',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-14T10:00:00Z',
+    }
+
+    let schedulePayload: { scheduledAt?: string } | null = null
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-draft-2/schedule') && options?.method === 'POST') {
+        schedulePayload = JSON.parse(options.body as string)
+        const scheduledResponse = {
+          ...mockDraftCampaign,
+          status: 'scheduled',
+          scheduledAt: schedulePayload?.scheduledAt,
+        }
+        return Promise.resolve(new Response(JSON.stringify(scheduledResponse), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockDraftCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Black Friday 2026')).toBeDefined()
+    })
+
+    // Open schedule modal
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('schedule-campaign-btn-camp-draft-2'))
+    })
+
+    const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const localDateTimeStr = `${futureDate.getFullYear()}-${pad(futureDate.getMonth() + 1)}-${pad(futureDate.getDate())}T${pad(futureDate.getHours())}:${pad(futureDate.getMinutes())}`
+
+    const input = screen.getByTestId('schedule-datetime-input')
+    fireEvent.change(input, { target: { value: localDateTimeStr } })
+
+    // Click confirm schedule
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-schedule-btn'))
+    })
+
+    // Verify API called with ISO UTC timestamp
+    expect(mockFetch).toHaveBeenCalled()
+    expect(schedulePayload).not.toBeNull()
+    const expectedUtcIso = new Date(localDateTimeStr).toISOString()
+    expect((schedulePayload as any)?.scheduledAt).toBe(expectedUtcIso)
+
+    // Modal is closed and status badge updated to scheduled
+    await waitFor(() => {
+      expect(screen.queryByTestId('schedule-modal-card')).toBeNull()
+      expect(screen.getByTestId('status-badge-camp-draft-2').textContent).toBe('scheduled')
+      expect(screen.getByTestId('scheduled-time-camp-draft-2')).toBeDefined()
+    })
+  })
+
+  it('25. Scheduled campaign displays scheduled time, shows Cancel button, and successfully cancels campaign', async () => {
+    const mockScheduledCampaign = {
+      id: 'camp-sched-3',
+      name: 'Holiday Greetings',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'scheduled',
+      scheduledAt: '2026-12-25T00:00:00Z',
+      createdAt: '2026-09-14T10:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-sched-3/cancel') && options?.method === 'POST') {
+        const cancelledResponse = {
+          ...mockScheduledCampaign,
+          status: 'cancelled',
+        }
+        return Promise.resolve(new Response(JSON.stringify(cancelledResponse), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockScheduledCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Holiday Greetings')).toBeDefined()
+      expect(screen.getByTestId('scheduled-time-camp-sched-3')).toBeDefined()
+    })
+
+    // Verify scheduled campaign has Cancel button and not Schedule or Edit button
+    expect(screen.getByTestId('cancel-campaign-btn-camp-sched-3')).toBeDefined()
+    expect(screen.queryByTestId('schedule-campaign-btn-camp-sched-3')).toBeNull()
+    expect(screen.queryByTestId('edit-campaign-btn-camp-sched-3')).toBeNull()
+
+    // Click Cancel button
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('cancel-campaign-btn-camp-sched-3'))
+    })
+
+    expect(screen.getByTestId('cancel-confirmation-card')).toBeDefined()
+
+    // Confirm cancel
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-cancel-btn'))
+    })
+
+    // Verify campaign status updated to cancelled
+    await waitFor(() => {
+      expect(screen.queryByTestId('cancel-confirmation-card')).toBeNull()
+      expect(screen.getByTestId('status-badge-camp-sched-3').textContent).toBe('cancelled')
+    })
+  })
+
+  it('26. Schedule modal displays API errors properly (400, 401, 403, 500, network)', async () => {
+    const mockCampaign = {
+      id: 'camp-err-sched',
+      name: 'Error Schedule Test',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-14T10:00:00Z',
+    }
+
+    let responseStatus = 400
+    let responseBody = { error: 'BAD_REQUEST', message: 'Campaign is already running or completed' }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-err-sched/schedule') && options?.method === 'POST') {
+        if (responseStatus === 500) {
+          return Promise.reject(new TypeError('Network schedule failure'))
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(responseBody), {
+            status: responseStatus,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Error Schedule Test')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('schedule-campaign-btn-camp-err-sched'))
+    })
+
+    const futureDate = new Date(Date.now() + 86400000)
+    const pad = (n: number) => n.toString().padStart(2, '0')
+    const localDateTimeStr = `${futureDate.getFullYear()}-${pad(futureDate.getMonth() + 1)}-${pad(futureDate.getDate())}T12:00`
+    fireEvent.change(screen.getByTestId('schedule-datetime-input'), { target: { value: localDateTimeStr } })
+
+    // 1. Test 400
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-schedule-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('schedule-error').textContent).toContain('Campaign is already running or completed')
+    })
+
+    // 2. Test 401
+    responseStatus = 401
+    responseBody = { error: 'UNAUTHORIZED', message: 'Token expired' }
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-schedule-btn'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('schedule-error').textContent).toContain('Unauthorized (401)')
+    })
+
+    // 3. Test 403
+    responseStatus = 403
+    responseBody = { error: 'FORBIDDEN', message: 'Access denied' }
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-schedule-btn'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('schedule-error').textContent).toContain('Forbidden (403)')
+    })
+
+    // 4. Test Network Error
+    responseStatus = 500
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-schedule-btn'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('schedule-error').textContent).toContain('Network schedule failure')
+    })
+  })
+
+  it('27. Cancel modal displays API errors properly (400, 401, 403, 500, network)', async () => {
+    const mockCampaign = {
+      id: 'camp-err-cancel',
+      name: 'Error Cancel Test',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'scheduled',
+      scheduledAt: '2026-12-01T10:00:00Z',
+      createdAt: '2026-09-14T10:00:00Z',
+    }
+
+    let responseStatus = 400
+    let responseBody = { error: 'BAD_REQUEST', message: 'Campaign is already running and cannot be cancelled' }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-err-cancel/cancel') && options?.method === 'POST') {
+        if (responseStatus === 500) {
+          return Promise.reject(new TypeError('Network cancel failure'))
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify(responseBody), {
+            status: responseStatus,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Error Cancel Test')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('cancel-campaign-btn-camp-err-cancel'))
+    })
+
+    // 1. Test 400
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-cancel-btn'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('cancel-error').textContent).toContain('Campaign is already running and cannot be cancelled')
+    })
+
+    // 2. Test 401
+    responseStatus = 401
+    responseBody = { error: 'UNAUTHORIZED', message: 'Token expired' }
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-cancel-btn'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('cancel-error').textContent).toContain('Unauthorized (401)')
+    })
+
+    // 3. Test 403
+    responseStatus = 403
+    responseBody = { error: 'FORBIDDEN', message: 'Access denied' }
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-cancel-btn'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('cancel-error').textContent).toContain('Forbidden (403)')
+    })
+
+    // 4. Test Network Error
+    responseStatus = 500
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-cancel-btn'))
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('cancel-error').textContent).toContain('Network cancel failure')
+    })
+  })
 })
