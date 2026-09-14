@@ -935,4 +935,277 @@ describe('CampaignsPage component', () => {
       expect(screen.getByTestId('composer-error').textContent).toContain('Failed to load campaign')
     })
   })
+
+  it('19. Shows delete action, displays confirmation card with campaign name, and cancels cleanly without calling API', async () => {
+    const mockCampaign = {
+      id: 'camp-to-cancel',
+      name: 'Summer Promo Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Summer Promo Campaign')).toBeDefined()
+    })
+
+    // Verify Delete button exists
+    const deleteBtn = screen.getByTestId('delete-campaign-btn-camp-to-cancel')
+    expect(deleteBtn).toBeDefined()
+
+    // Click Delete -> shows confirmation
+    await act(async () => {
+      fireEvent.click(deleteBtn)
+    })
+
+    expect(screen.getByTestId('delete-confirmation-card')).toBeDefined()
+    expect(screen.getByText(/Are you sure you want to delete campaign/i)).toBeDefined()
+    expect(screen.getAllByText('Summer Promo Campaign').length).toBeGreaterThanOrEqual(2)
+
+    // Click Cancel -> hides confirmation, no DELETE request made
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('cancel-delete-btn'))
+    })
+
+    expect(screen.queryByTestId('delete-confirmation-card')).toBeNull()
+
+    const deleteCall = mockFetch.mock.calls.find((call) => call[1]?.method === 'DELETE')
+    expect(deleteCall).toBeUndefined()
+  })
+
+  it('20. Successfully deletes campaign, calls DELETE /api/v1/campaigns/{id} with auth token, and removes campaign from table', async () => {
+    const customToken = 'delete-auth-token-123'
+    setAuthMock({ accessToken: customToken })
+
+    const mockCampaigns = [
+      {
+        id: 'camp-del-target',
+        name: 'Target For Deletion',
+        templateId: 'tpl-101',
+        campaignType: 'broadcast',
+        status: 'draft',
+        createdAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'camp-keep',
+        name: 'Campaign To Keep',
+        templateId: 'tpl-101',
+        campaignType: 'broadcast',
+        status: 'draft',
+        createdAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (init?.method === 'DELETE' && url.includes('/api/v1/campaigns/camp-del-target')) {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify(mockCampaigns), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Target For Deletion')).toBeDefined()
+      expect(screen.getByText('Campaign To Keep')).toBeDefined()
+    })
+
+    // Click delete on target campaign
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('delete-campaign-btn-camp-del-target'))
+    })
+
+    // Click confirm delete
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-delete-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByText('Target For Deletion')).toBeNull()
+      expect(screen.getByText('Campaign To Keep')).toBeDefined()
+    })
+
+    // Verify DELETE fetch call
+    const deleteCall = mockFetch.mock.calls.find(
+      (call) => call[0].includes('/api/v1/campaigns/camp-del-target') && call[1]?.method === 'DELETE'
+    )
+    expect(deleteCall).toBeDefined()
+    const headers = new Headers(deleteCall![1].headers)
+    expect(headers.get('Authorization')).toBe(`Bearer ${customToken}`)
+  })
+
+  it('21. Closes composer safely if the currently edited campaign is deleted', async () => {
+    const mockCampaign = {
+      id: 'camp-editing-deleted',
+      name: 'Editing Deletion Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (init?.method === 'DELETE') {
+        return Promise.resolve(new Response(null, { status: 204 }))
+      }
+      if (url.includes('/api/v1/campaigns/camp-editing-deleted')) {
+        return Promise.resolve(new Response(JSON.stringify(mockCampaign), { status: 200 }))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Editing Deletion Campaign')).toBeDefined()
+    })
+
+    // Open edit composer
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('edit-campaign-btn-camp-editing-deleted'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Campaign')).toBeDefined()
+    })
+
+    // Now delete this same campaign
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('delete-campaign-btn-camp-editing-deleted'))
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-delete-btn'))
+    })
+
+    await waitFor(() => {
+      // Composer must be closed
+      expect(screen.queryByText('Edit Campaign')).toBeNull()
+      expect(screen.queryByText('Editing Deletion Campaign')).toBeNull()
+    })
+  })
+
+  it('22. Handles 401, 403, 404, and generic errors during delete', async () => {
+    const mockCampaign = {
+      id: 'camp-err-test',
+      name: 'Error Test Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      createdAt: '2026-09-01T00:00:00Z',
+    }
+
+    let deleteStatus = 401
+    const mockFetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (init?.method === 'DELETE') {
+        if (deleteStatus === 401) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: { message: 'Unauthorized', code: 'UNAUTHORIZED' } }), {
+              status: 401,
+            })
+          )
+        }
+        if (deleteStatus === 403) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: { message: 'Forbidden', code: 'FORBIDDEN' } }), {
+              status: 403,
+            })
+          )
+        }
+        if (deleteStatus === 404) {
+          return Promise.resolve(
+            new Response(JSON.stringify({ error: { message: 'Not found', code: 'NOT_FOUND' } }), {
+              status: 404,
+            })
+          )
+        }
+        return Promise.reject(new TypeError('Network failure'))
+      }
+      if (url.includes('/api/v1/campaigns')) {
+        return Promise.resolve(new Response(JSON.stringify([mockCampaign]), { status: 200 }))
+      }
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Error Test Campaign')).toBeDefined()
+    })
+
+    // 1. Test 401
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('delete-campaign-btn-camp-err-test'))
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-delete-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('delete-error').textContent).toContain('Unauthorized (401)')
+    })
+
+    // 2. Test 403
+    deleteStatus = 403
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-delete-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('delete-error').textContent).toContain('Forbidden (403)')
+    })
+
+    // 3. Test Network error
+    deleteStatus = 500
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-delete-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('delete-error').textContent).toContain('Network failure')
+    })
+
+    // 4. Test 404 (removes from list and displays not found message)
+    deleteStatus = 404
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('confirm-delete-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('delete-error').textContent).toContain('Campaign not found')
+    })
+  })
 })

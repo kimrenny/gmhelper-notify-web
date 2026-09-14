@@ -94,6 +94,11 @@ function CampaignsPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
+  // Delete state
+  const [campaignToDelete, setCampaignToDelete] = useState<Campaign | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
+
   const loadCampaigns = useCallback(async (signal?: AbortSignal) => {
     setIsLoading(true)
     setError(null)
@@ -332,6 +337,54 @@ function CampaignsPage() {
     }
   }
 
+  const promptDelete = (campaign: Campaign) => {
+    setCampaignToDelete(campaign)
+    setDeleteError(null)
+  }
+
+  const cancelDelete = () => {
+    if (isDeleting) return
+    setCampaignToDelete(null)
+    setDeleteError(null)
+  }
+
+  const confirmDelete = async () => {
+    if (!campaignToDelete || isDeleting) return
+
+    setIsDeleting(true)
+    setDeleteError(null)
+
+    try {
+      await campaignService.deleteCampaign(campaignToDelete.id, apiClient)
+      if (editingCampaignId === campaignToDelete.id) {
+        setIsComposerOpen(false)
+        setEditingCampaignId(null)
+        setFormData(initialFormState)
+        setFormValidationErrors({})
+        setFormError(null)
+      }
+      setCampaigns((prev) => prev.filter((c) => c.id !== campaignToDelete.id))
+      setCampaignToDelete(null)
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.isUnauthorized || err.statusCode === 401) {
+          setDeleteError('Unauthorized (401): Session expired or invalid.')
+        } else if (err.isForbidden || err.statusCode === 403) {
+          setDeleteError('Forbidden (403): You do not have permission to delete campaigns.')
+        } else if (err.statusCode === 404) {
+          setDeleteError('Campaign not found. It may have already been deleted.')
+          setCampaigns((prev) => prev.filter((c) => c.id !== campaignToDelete.id))
+        } else {
+          setDeleteError(err.message || 'Failed to delete campaign.')
+        }
+      } else {
+        setDeleteError('Network error occurred while deleting the campaign.')
+      }
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
   const selectedTemplate = templates.find((t) => t.id === formData.templateId)
 
   return (
@@ -396,6 +449,59 @@ function CampaignsPage() {
           >
             Retry
           </button>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal / Prompt */}
+      {campaignToDelete && (
+        <div
+          className="gm-admin-card"
+          data-testid="delete-confirmation-card"
+          style={{
+            borderColor: 'rgba(239, 68, 68, 0.4)',
+            background: 'rgba(26, 17, 23, 0.95)',
+            marginBottom: '1rem',
+          }}
+        >
+          <h2 className="gm-admin-card__title" style={{ color: '#fca5a5' }}>
+            Confirm Delete
+          </h2>
+          <p style={{ color: '#e2e8f0', margin: '0.5rem 0 1rem', lineHeight: 1.6 }}>
+            Are you sure you want to delete campaign <strong>{campaignToDelete.name}</strong>? This action cannot be undone.
+          </p>
+
+          {deleteError && (
+            <div className="gm-admin-warning" role="alert" data-testid="delete-error" style={{ marginBottom: '1rem' }}>
+              {deleteError}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+            <button
+              type="button"
+              className="gm-admin-btn"
+              onClick={cancelDelete}
+              disabled={isDeleting}
+              data-testid="cancel-delete-btn"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="gm-admin-btn"
+              style={{
+                background: '#dc2626',
+                borderColor: '#ef4444',
+                color: '#ffffff',
+                opacity: isDeleting ? 0.7 : 1,
+              }}
+              onClick={() => void confirmDelete()}
+              disabled={isDeleting}
+              data-testid="confirm-delete-btn"
+            >
+              {isDeleting ? 'Deleting...' : 'Confirm Delete'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -621,15 +727,27 @@ function CampaignsPage() {
                     </div>
                   </td>
                   <td>
-                    <button
-                      type="button"
-                      className="gm-admin-btn"
-                      onClick={() => void handleOpenEdit(campaign)}
-                      disabled={isSubmitting || isLoadingCampaign}
-                      data-testid={`edit-campaign-btn-${campaign.id}`}
-                    >
-                      Edit
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <button
+                        type="button"
+                        className="gm-admin-btn"
+                        onClick={() => void handleOpenEdit(campaign)}
+                        disabled={isSubmitting || isLoadingCampaign || isDeleting}
+                        data-testid={`edit-campaign-btn-${campaign.id}`}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="gm-admin-btn"
+                        style={{ color: '#fecaca', borderColor: 'rgba(248,113,113,0.3)' }}
+                        onClick={() => promptDelete(campaign)}
+                        disabled={isSubmitting || isLoadingCampaign || isDeleting}
+                        data-testid={`delete-campaign-btn-${campaign.id}`}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
