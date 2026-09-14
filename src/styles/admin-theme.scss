@@ -57,6 +57,24 @@
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.gm-admin-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 1.5rem;
+  align-items: start;
+  width: 100%;
+
+  @media (max-width: 960px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.gm-admin-editor-layout--single {
+  display: block;
+  max-width: 840px;
+  width: 100%;
+}
+
 .gm-admin-input,
 .gm-admin-select {
   width: 100%;
