@@ -57,3 +57,5 @@ export interface PreviewTemplateResponse {
 export * from './auth'
 export * from './api'
 export * from './campaign'
+export * from './dashboard'
+
