@@ -41,6 +41,22 @@ export interface UpdateTemplateInput {
   version?: number
 }
 
+export interface PreviewTemplateRequest {
+  subject?: string
+  htmlBody?: string
+  plainTextBody?: string
+  variables?: Record<string, unknown>
+}
+
+export interface PreviewTemplateResponse {
+  subject: string
+  htmlBody: string
+  plainTextBody?: string
+}
+
 export * from './auth'
 export * from './api'
 export * from './campaign'
+export * from './dashboard'
+export * from './automation'
+

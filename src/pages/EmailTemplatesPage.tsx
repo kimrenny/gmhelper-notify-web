@@ -1,7 +1,13 @@
 import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useApiClient } from '../hooks/useApiClient'
 import { ApiError, templateService } from '../services'
-import type { CreateTemplateInput, EmailTemplate, UpdateTemplateInput } from '../types'
+import type {
+  CreateTemplateInput,
+  EmailTemplate,
+  PreviewTemplateRequest,
+  PreviewTemplateResponse,
+  UpdateTemplateInput,
+} from '../types'
 
 interface FormState {
   templateKey: string
@@ -55,6 +61,12 @@ function EmailTemplatesPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
+  // Preview state
+  const [showPreview, setShowPreview] = useState(true)
+  const [previewData, setPreviewData] = useState<PreviewTemplateResponse | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false)
+
   // Delete state
   const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -98,11 +110,91 @@ function EmailTemplatesPage() {
     }
   }, [loadTemplates])
 
+  // Live debounced template preview
+  useEffect(() => {
+    if (!isFormOpen || !showPreview) {
+      return
+    }
+
+    const trimmedSubject = formData.subject.trim()
+    const trimmedHtml = formData.htmlBody.trim()
+
+    if (!trimmedSubject || !trimmedHtml) {
+      setIsPreviewLoading(false)
+      setPreviewError(null)
+      setPreviewData(null)
+      return
+    }
+
+    const controller = new AbortController()
+    setIsPreviewLoading(true)
+
+    const timer = setTimeout(async () => {
+      try {
+        const templateId = editingTemplate?.id || 'preview'
+        const previewReq: PreviewTemplateRequest = {
+          subject: formData.subject,
+          htmlBody: formData.htmlBody,
+          plainTextBody: formData.plainTextBody,
+          variables: {},
+        }
+        const rendered = await templateService.previewTemplate(
+          templateId,
+          previewReq,
+          apiClient,
+          controller.signal
+        )
+        if (!controller.signal.aborted) {
+          setPreviewData(rendered)
+          setPreviewError(null)
+        }
+      } catch (err) {
+        if (controller.signal.aborted) {
+          return
+        }
+        if (err instanceof ApiError) {
+          if (err.isUnauthorized || err.statusCode === 401) {
+            setPreviewError('Unauthorized (401): Session expired or invalid.')
+          } else if (err.isForbidden || err.statusCode === 403) {
+            setPreviewError('Forbidden (403): You do not have permission to preview templates.')
+          } else if (err.statusCode === 400) {
+            setPreviewError(`Validation error: ${err.message}`)
+          } else {
+            setPreviewError(err.message || 'Failed to generate template preview.')
+          }
+        } else {
+          const msg = err instanceof Error ? err.message : 'Network error occurred while generating template preview.'
+          setPreviewError(msg)
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsPreviewLoading(false)
+        }
+      }
+    }, 400)
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [
+    isFormOpen,
+    showPreview,
+    formData.subject,
+    formData.htmlBody,
+    formData.plainTextBody,
+    editingTemplate?.id,
+    apiClient,
+  ])
+
   const openCreateForm = () => {
     setEditingTemplate(null)
     setFormData(initialFormState)
     setFormValidationErrors({})
     setFormError(null)
+    setPreviewData(null)
+    setPreviewError(null)
+    setShowPreview(true)
     setIsFormOpen(true)
   }
 
@@ -120,6 +212,9 @@ function EmailTemplatesPage() {
     })
     setFormValidationErrors({})
     setFormError(null)
+    setPreviewData(null)
+    setPreviewError(null)
+    setShowPreview(true)
     setIsFormOpen(true)
   }
 
@@ -130,6 +225,8 @@ function EmailTemplatesPage() {
     setFormData(initialFormState)
     setFormValidationErrors({})
     setFormError(null)
+    setPreviewData(null)
+    setPreviewError(null)
   }
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -208,6 +305,8 @@ function EmailTemplatesPage() {
       setIsFormOpen(false)
       setEditingTemplate(null)
       setFormData(initialFormState)
+      setPreviewData(null)
+      setPreviewError(null)
     } catch (err) {
       if (err instanceof ApiError) {
         if (err.isUnauthorized || err.statusCode === 401) {
@@ -345,164 +444,347 @@ function EmailTemplatesPage() {
         </div>
       )}
 
-      {/* Create / Edit Form Card */}
+      {/* Create / Edit Form Section with Side-by-Side Live Preview */}
       {isFormOpen && (
-        <div className="gm-admin-card" style={{ maxWidth: '840px' }}>
-          <h2 className="gm-admin-card__title">
-            {editingTemplate ? `Edit Template: ${editingTemplate.name}` : 'New Email Template'}
-          </h2>
+        <div
+          className={showPreview ? 'gm-admin-editor-layout' : 'gm-admin-editor-layout--single'}
+          data-testid="template-editor-container"
+        >
+          {/* Left Column: Form */}
+          <div className="gm-admin-card" style={{ width: '100%', boxSizing: 'border-box' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '1rem',
+                gap: '1rem',
+              }}
+            >
+              <h2 className="gm-admin-card__title" style={{ margin: 0 }}>
+                {editingTemplate ? `Edit Template: ${editingTemplate.name}` : 'New Email Template'}
+              </h2>
+              <button
+                type="button"
+                className="gm-admin-btn"
+                style={{ fontSize: '0.85rem', padding: '0.45rem 0.85rem' }}
+                onClick={() => setShowPreview((prev) => !prev)}
+                data-testid="toggle-preview-btn"
+              >
+                {showPreview ? 'Hide Preview' : 'Show Preview'}
+              </button>
+            </div>
 
-          {formError && (
-            <div className="gm-admin-warning" role="alert" style={{ marginBottom: '1.25rem' }}>
-              {formError}
+            {formError && (
+              <div className="gm-admin-warning" role="alert" style={{ marginBottom: '1.25rem' }}>
+                {formError}
+              </div>
+            )}
+
+            <form onSubmit={(e) => void handleFormSubmit(e)} style={{ display: 'grid', gap: '1rem' }}>
+              <div className="gm-admin-grid gm-admin-grid--2">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                    Name <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <input
+                    name="name"
+                    className="gm-admin-input"
+                    placeholder="e.g. Welcome Email"
+                    value={formData.name}
+                    onChange={handleInputChange}
+                    disabled={isSaving}
+                  />
+                  {formValidationErrors.name && (
+                    <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.name}</span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                    Template Key <span style={{ color: '#f87171' }}>*</span>
+                  </label>
+                  <input
+                    name="templateKey"
+                    className="gm-admin-input"
+                    placeholder="e.g. welcome_email"
+                    value={formData.templateKey}
+                    onChange={handleInputChange}
+                    disabled={isSaving}
+                  />
+                  {formValidationErrors.templateKey && (
+                    <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.templateKey}</span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  Subject <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <input
+                  name="subject"
+                  className="gm-admin-input"
+                  placeholder="e.g. Welcome to GMHelper!"
+                  value={formData.subject}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                />
+                {formValidationErrors.subject && (
+                  <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.subject}</span>
+                )}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Locale</label>
+                  <input
+                    name="locale"
+                    className="gm-admin-input"
+                    placeholder="en"
+                    value={formData.locale}
+                    onChange={handleInputChange}
+                    disabled={isSaving}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Status</label>
+                  <select
+                    name="status"
+                    className="gm-admin-select"
+                    value={formData.status}
+                    onChange={handleInputChange}
+                    disabled={isSaving}
+                  >
+                    <option value="active">Active</option>
+                    <option value="draft">Draft</option>
+                    <option value="archived">Archived</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Version</label>
+                  <input
+                    name="version"
+                    type="number"
+                    min="1"
+                    className="gm-admin-input"
+                    value={formData.version}
+                    onChange={handleInputChange}
+                    disabled={isSaving}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  HTML Body <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <textarea
+                  name="htmlBody"
+                  className="gm-admin-input"
+                  placeholder="<p>Hello, welcome to our service...</p>"
+                  rows={6}
+                  style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.9rem' }}
+                  value={formData.htmlBody}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                />
+                {formValidationErrors.htmlBody && (
+                  <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.htmlBody}</span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  Plain Text Body <span style={{ color: '#94a3b8', fontWeight: 400 }}>(Optional)</span>
+                </label>
+                <textarea
+                  name="plainTextBody"
+                  className="gm-admin-input"
+                  placeholder="Hello, welcome to our service..."
+                  rows={4}
+                  style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: '0.9rem' }}
+                  value={formData.plainTextBody}
+                  onChange={handleInputChange}
+                  disabled={isSaving}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
+                <button type="button" className="gm-admin-btn" onClick={closeForm} disabled={isSaving}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="gm-admin-btn gm-admin-btn--primary"
+                  disabled={isSaving}
+                  style={{ opacity: isSaving ? 0.7 : 1 }}
+                >
+                  {isSaving ? 'Saving...' : editingTemplate ? 'Update Template' : 'Create Template'}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Right Column: Live Rendered Preview */}
+          {showPreview && (
+            <div
+              className="gm-admin-card"
+              data-testid="template-preview-card"
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                border: '1px solid rgba(148, 163, 184, 0.25)',
+                background: 'rgba(15, 23, 42, 0.75)',
+                position: 'sticky',
+                top: '1.5rem',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '1rem',
+                  gap: '0.5rem',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <h3 className="gm-admin-card__title" style={{ margin: 0, fontSize: '1.1rem' }}>
+                    Live Preview
+                  </h3>
+                  {isPreviewLoading && (
+                    <span
+                      data-testid="preview-loading-indicator"
+                      style={{
+                        fontSize: '0.75rem',
+                        color: '#c084fc',
+                        background: 'rgba(192, 132, 252, 0.15)',
+                        padding: '0.15rem 0.5rem',
+                        borderRadius: '4px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Updating...
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  className="gm-admin-btn"
+                  style={{ fontSize: '0.85rem', padding: '0.45rem 0.85rem' }}
+                  onClick={() => setShowPreview(false)}
+                  data-testid="close-preview-btn"
+                >
+                  Hide Preview
+                </button>
+              </div>
+
+              {/* Preview Content Area */}
+              {previewError ? (
+                <div className="gm-admin-warning" role="alert" data-testid="preview-error">
+                  {previewError}
+                </div>
+              ) : isPreviewLoading && !previewData ? (
+                <div
+                  data-testid="preview-initial-loading"
+                  style={{
+                    padding: '3rem 1rem',
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    fontStyle: 'italic',
+                  }}
+                >
+                  Loading preview...
+                </div>
+              ) : !formData.subject.trim() || !formData.htmlBody.trim() ? (
+                <div
+                  data-testid="preview-empty-notice"
+                  style={{
+                    padding: '2.5rem 1rem',
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    borderRadius: '6px',
+                    border: '1px dashed rgba(148, 163, 184, 0.25)',
+                    background: 'rgba(30, 41, 59, 0.3)',
+                    fontSize: '0.9rem',
+                  }}
+                >
+                  Enter a subject and HTML body to see the live rendered preview.
+                </div>
+              ) : previewData ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  <div>
+                    <div style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                      Rendered Subject:
+                    </div>
+                    <div
+                      data-testid="preview-rendered-subject"
+                      style={{
+                        color: '#f8fafc',
+                        fontSize: '1rem',
+                        fontWeight: 600,
+                        padding: '0.5rem 0.75rem',
+                        background: 'rgba(30, 41, 59, 0.6)',
+                        borderRadius: '4px',
+                        border: '1px solid rgba(148, 163, 184, 0.15)',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {previewData.subject}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                      Rendered HTML:
+                    </div>
+                    <div
+                      data-testid="preview-rendered-html"
+                      style={{
+                        padding: '1rem',
+                        background: '#ffffff',
+                        color: '#0f172a',
+                        borderRadius: '6px',
+                        minHeight: '140px',
+                        maxHeight: '400px',
+                        overflow: 'auto',
+                      }}
+                      dangerouslySetInnerHTML={{ __html: previewData.htmlBody }}
+                    />
+                  </div>
+
+                  {previewData.plainTextBody && (
+                    <div>
+                      <div style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+                        Rendered Plain Text:
+                      </div>
+                      <pre
+                        data-testid="preview-rendered-plaintext"
+                        style={{
+                          margin: 0,
+                          padding: '0.75rem',
+                          background: 'rgba(30, 41, 59, 0.6)',
+                          color: '#e2e8f0',
+                          borderRadius: '4px',
+                          fontSize: '0.85rem',
+                          whiteSpace: 'pre-wrap',
+                          fontFamily: 'monospace',
+                          border: '1px solid rgba(148, 163, 184, 0.15)',
+                          maxHeight: '200px',
+                          overflow: 'auto',
+                        }}
+                      >
+                        {previewData.plainTextBody}
+                      </pre>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           )}
-
-          <form onSubmit={(e) => void handleFormSubmit(e)} style={{ display: 'grid', gap: '1rem' }}>
-            <div className="gm-admin-grid gm-admin-grid--2">
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
-                  Name <span style={{ color: '#f87171' }}>*</span>
-                </label>
-                <input
-                  name="name"
-                  className="gm-admin-input"
-                  placeholder="e.g. Welcome Email"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  disabled={isSaving}
-                />
-                {formValidationErrors.name && (
-                  <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.name}</span>
-                )}
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
-                  Template Key <span style={{ color: '#f87171' }}>*</span>
-                </label>
-                <input
-                  name="templateKey"
-                  className="gm-admin-input"
-                  placeholder="e.g. welcome_email"
-                  value={formData.templateKey}
-                  onChange={handleInputChange}
-                  disabled={isSaving}
-                />
-                {formValidationErrors.templateKey && (
-                  <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.templateKey}</span>
-                )}
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
-                Subject <span style={{ color: '#f87171' }}>*</span>
-              </label>
-              <input
-                name="subject"
-                className="gm-admin-input"
-                placeholder="e.g. Welcome to GMHelper!"
-                value={formData.subject}
-                onChange={handleInputChange}
-                disabled={isSaving}
-              />
-              {formValidationErrors.subject && (
-                <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.subject}</span>
-              )}
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Locale</label>
-                <input
-                  name="locale"
-                  className="gm-admin-input"
-                  placeholder="en"
-                  value={formData.locale}
-                  onChange={handleInputChange}
-                  disabled={isSaving}
-                />
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Status</label>
-                <select
-                  name="status"
-                  className="gm-admin-select"
-                  value={formData.status}
-                  onChange={handleInputChange}
-                  disabled={isSaving}
-                >
-                  <option value="active">Active</option>
-                  <option value="draft">Draft</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Version</label>
-                <input
-                  name="version"
-                  type="number"
-                  min="1"
-                  className="gm-admin-input"
-                  value={formData.version}
-                  onChange={handleInputChange}
-                  disabled={isSaving}
-                />
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
-                HTML Body <span style={{ color: '#f87171' }}>*</span>
-              </label>
-              <textarea
-                name="htmlBody"
-                className="gm-admin-input"
-                placeholder="<p>Hello, welcome to our service...</p>"
-                rows={6}
-                style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: '0.9rem' }}
-                value={formData.htmlBody}
-                onChange={handleInputChange}
-                disabled={isSaving}
-              />
-              {formValidationErrors.htmlBody && (
-                <span style={{ color: '#f87171', fontSize: '0.85rem' }}>{formValidationErrors.htmlBody}</span>
-              )}
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
-                Plain Text Body <span style={{ color: '#94a3b8', fontWeight: 400 }}>(Optional)</span>
-              </label>
-              <textarea
-                name="plainTextBody"
-                className="gm-admin-input"
-                placeholder="Hello, welcome to our service..."
-                rows={4}
-                style={{ resize: 'vertical', fontFamily: 'inherit', fontSize: '0.9rem' }}
-                value={formData.plainTextBody}
-                onChange={handleInputChange}
-                disabled={isSaving}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', marginTop: '0.5rem' }}>
-              <button type="button" className="gm-admin-btn" onClick={closeForm} disabled={isSaving}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="gm-admin-btn gm-admin-btn--primary"
-                disabled={isSaving}
-                style={{ opacity: isSaving ? 0.7 : 1 }}
-              >
-                {isSaving ? 'Saving...' : editingTemplate ? 'Update Template' : 'Create Template'}
-              </button>
-            </div>
-          </form>
         </div>
       )}
 

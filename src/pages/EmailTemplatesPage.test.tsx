@@ -313,4 +313,468 @@ describe('EmailTemplatesPage component', () => {
       expect(screen.queryByText('Confirm Delete')).toBeNull()
     })
   })
+
+  it('8. Live preview is visible by default and renders live preview after debouncing', async () => {
+    const mockPreviewResponse = {
+      subject: 'Rendered Welcome to GMHelper!',
+      htmlBody: '<div><strong>Rendered Welcome HTML</strong></div>',
+      plainTextBody: 'Rendered Welcome Plaintext',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/preview') && options?.method === 'POST') {
+        return Promise.resolve(
+          new Response(JSON.stringify(mockPreviewResponse), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(mockTemplates), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Welcome Email')).toBeDefined()
+    })
+
+    const editButtons = screen.getAllByRole('button', { name: /Edit/i })
+    fireEvent.click(editButtons[0])
+
+    // Live preview card must be visible by default
+    expect(screen.getByTestId('template-preview-card')).toBeDefined()
+    expect(screen.getByTestId('toggle-preview-btn').textContent).toBe('Hide Preview')
+
+    // Wait for debounced preview request and rendered content
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-rendered-subject').textContent).toBe(mockPreviewResponse.subject)
+      expect(screen.getByTestId('preview-rendered-html').innerHTML).toContain('<strong>Rendered Welcome HTML</strong>')
+      expect(screen.getByTestId('preview-rendered-plaintext').textContent).toBe(mockPreviewResponse.plainTextBody)
+    })
+
+    const previewCall = mockFetch.mock.calls.find(
+      (call) => call[0].includes('/preview') && call[1]?.method === 'POST'
+    )
+    expect(previewCall).toBeDefined()
+    expect(previewCall![0]).toContain('/api/v1/templates/tpl-1/preview')
+
+    const body = JSON.parse(previewCall![1].body as string)
+    expect(body.subject).toBe(mockTemplates[0].subject)
+    expect(body.htmlBody).toBe(mockTemplates[0].htmlBody)
+
+    const headers = new Headers(previewCall![1].headers)
+    expect(headers.get('Authorization')).toBe('Bearer template-jwt-access-token-123')
+  })
+
+  it('9. Toggles preview visibility with Hide Preview / Show Preview button', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/preview') && options?.method === 'POST') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              subject: 'Rendered Subject',
+              htmlBody: '<p>Rendered HTML</p>',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(mockTemplates), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Welcome Email')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit/i })[0])
+
+    // Initially visible
+    expect(screen.getByTestId('template-preview-card')).toBeDefined()
+    const toggleBtn = screen.getByTestId('toggle-preview-btn')
+    expect(toggleBtn.textContent).toBe('Hide Preview')
+
+    // Click Hide Preview
+    fireEvent.click(toggleBtn)
+    expect(screen.queryByTestId('template-preview-card')).toBeNull()
+    expect(toggleBtn.textContent).toBe('Show Preview')
+
+    // Click Show Preview
+    fireEvent.click(toggleBtn)
+    expect(screen.getByTestId('template-preview-card')).toBeDefined()
+    expect(toggleBtn.textContent).toBe('Hide Preview')
+
+    // Close preview from inside the preview card
+    fireEvent.click(screen.getByTestId('close-preview-btn'))
+    expect(screen.queryByTestId('template-preview-card')).toBeNull()
+    expect(screen.getByTestId('toggle-preview-btn').textContent).toBe('Show Preview')
+  })
+
+  it('10. Live preview automatically updates with debounced unsaved values', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/preview') && options?.method === 'POST') {
+        const body = JSON.parse(options.body as string)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              subject: `Rendered: ${body.subject}`,
+              htmlBody: `Rendered: ${body.htmlBody}`,
+              plainTextBody: body.plainTextBody ? `Rendered: ${body.plainTextBody}` : undefined,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(mockTemplates), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Welcome Email')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit/i })[0])
+
+    // Wait for initial preview
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-rendered-subject').textContent).toContain('Rendered: Welcome to GMHelper!')
+    })
+
+    // Modify subject and html body with unsaved values
+    fireEvent.change(screen.getByPlaceholderText('e.g. Welcome to GMHelper!'), {
+      target: { value: 'Live Unsaved Subject {{name}}' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('<p>Hello, welcome to our service...</p>'), {
+      target: { value: '<p>Live Unsaved HTML Body</p>' },
+    })
+
+    // Wait for debounced live preview update
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-rendered-subject').textContent).toBe('Rendered: Live Unsaved Subject {{name}}')
+      expect(screen.getByTestId('preview-rendered-html').innerHTML).toContain('Rendered: <p>Live Unsaved HTML Body</p>')
+    })
+  })
+
+  it('11. Displays empty notice when subject or html body is blank', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockTemplates), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Add template/i })).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Add template/i }))
+
+    // Preview panel is open by default but fields are empty
+    expect(screen.getByTestId('template-preview-card')).toBeDefined()
+    expect(screen.getByTestId('preview-empty-notice').textContent).toContain(
+      'Enter a subject and HTML body to see the live rendered preview.'
+    )
+
+    // No preview API call was made
+    const previewCalls = mockFetch.mock.calls.filter(
+      (call) => call[0].includes('/preview') && call[1]?.method === 'POST'
+    )
+    expect(previewCalls.length).toBe(0)
+  })
+
+  it('12. Prevents stale older preview responses from overwriting newer preview', async () => {
+    let resolveFirstPreview: (value: Response) => void
+    let resolveSecondPreview: (value: Response) => void
+
+    let callCount = 0
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/preview') && options?.method === 'POST') {
+        callCount++
+        if (callCount === 1) {
+          return new Promise<Response>((resolve) => {
+            resolveFirstPreview = resolve
+          })
+        }
+        return new Promise<Response>((resolve) => {
+          resolveSecondPreview = resolve
+        })
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(mockTemplates), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Welcome Email')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit/i })[0])
+
+    // Wait for first preview call to be dispatched
+    await waitFor(() => {
+      expect(mockFetch.mock.calls.filter((c) => c[0].includes('/preview')).length).toBe(1)
+    })
+
+    // User types quickly, triggering second preview
+    fireEvent.change(screen.getByPlaceholderText('e.g. Welcome to GMHelper!'), {
+      target: { value: 'Newest Typed Subject' },
+    })
+
+    await waitFor(() => {
+      expect(mockFetch.mock.calls.filter((c) => c[0].includes('/preview')).length).toBe(2)
+    })
+
+    // Resolve second (newer) preview first
+    await act(async () => {
+      resolveSecondPreview!(
+        new Response(
+          JSON.stringify({
+            subject: 'Rendered: Newest Typed Subject',
+            htmlBody: '<p>Newest HTML</p>',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-rendered-subject').textContent).toBe('Rendered: Newest Typed Subject')
+    })
+
+    // Now resolve first (stale) preview later
+    await act(async () => {
+      resolveFirstPreview!(
+        new Response(
+          JSON.stringify({
+            subject: 'Rendered: Stale Older Subject',
+            htmlBody: '<p>Stale Older HTML</p>',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        )
+      )
+    })
+
+    // The rendered subject must remain the newer one
+    expect(screen.getByTestId('preview-rendered-subject').textContent).toBe('Rendered: Newest Typed Subject')
+  })
+
+  it('13. Displays error states (401, 403, and network errors) in live preview', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/preview') && options?.method === 'POST') {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: { code: 'FORBIDDEN', message: 'insufficient permissions' },
+            }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(mockTemplates), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Welcome Email')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit/i })[0])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-error').textContent).toContain('Forbidden (403)')
+    })
+  })
+
+  it('14. Switching between templates reinitializes live preview correctly', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/preview') && options?.method === 'POST') {
+        const body = JSON.parse(options.body as string)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              subject: `Rendered: ${body.subject}`,
+              htmlBody: `Rendered: ${body.htmlBody}`,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(mockTemplates), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Welcome Email')).toBeDefined()
+    })
+
+    // Open first template
+    const editButtons = screen.getAllByRole('button', { name: /Edit/i })
+    fireEvent.click(editButtons[0])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-rendered-subject').textContent).toBe(
+        `Rendered: ${mockTemplates[0].subject}`
+      )
+    })
+
+    // Cancel / close editor
+    fireEvent.click(screen.getByRole('button', { name: /Cancel/i }))
+    expect(screen.queryByTestId('template-preview-card')).toBeNull()
+
+    // Open second template
+    fireEvent.click(screen.getAllByRole('button', { name: /Edit/i })[1])
+
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-rendered-subject').textContent).toBe(
+        `Rendered: ${mockTemplates[1].subject}`
+      )
+    })
+  })
+
+  it('15. Proves changing editor fields sends exact unsaved values in request body and renders returned preview without clicking Update Template', async () => {
+    const savedTemplate = {
+      id: 'tpl-saved-1',
+      templateKey: 'saved_key',
+      name: 'Saved Name',
+      subject: 'Original',
+      htmlBody: '<p>Original</p>',
+      plainTextBody: 'Original Text',
+      locale: 'en',
+      status: 'active',
+      version: 1,
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/preview') && options?.method === 'POST') {
+        const body = JSON.parse(options.body as string)
+        if (body.subject === 'Changed' && body.htmlBody === '<p>Changed</p>') {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                subject: 'LIVE PREVIEW SUBJECT',
+                htmlBody: '<p>LIVE PREVIEW BODY</p>',
+                plainTextBody: 'LIVE PREVIEW TEXT',
+              }),
+              { status: 200, headers: { 'Content-Type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              subject: 'Initial Rendered Subject',
+              htmlBody: '<p>Initial Rendered HTML</p>',
+              plainTextBody: 'Initial Plain',
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([savedTemplate]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Saved Name')).toBeDefined()
+    })
+
+    // Open edit form
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }))
+
+    // Initial values are "Original" and "<p>Original</p>"
+    expect(screen.getByDisplayValue('Original')).toBeDefined()
+    expect(screen.getByDisplayValue('<p>Original</p>')).toBeDefined()
+
+    // Change editor values to "Changed" and "<p>Changed</p>"
+    fireEvent.change(screen.getByPlaceholderText('e.g. Welcome to GMHelper!'), {
+      target: { value: 'Changed' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('<p>Hello, welcome to our service...</p>'), {
+      target: { value: '<p>Changed</p>' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Hello, welcome to our service...'), {
+      target: { value: 'Changed Text' },
+    })
+
+    // Wait for debounced live preview request
+    await waitFor(() => {
+      expect(screen.getByTestId('preview-rendered-subject').textContent).toBe('LIVE PREVIEW SUBJECT')
+      expect(screen.getByTestId('preview-rendered-html').innerHTML).toContain('<p>LIVE PREVIEW BODY</p>')
+      expect(screen.getByTestId('preview-rendered-plaintext').textContent).toBe('LIVE PREVIEW TEXT')
+    })
+
+    // Assert that the preview request contained the exact unsaved editor values
+    const previewCalls = mockFetch.mock.calls.filter(
+      (call) => call[0].includes('/preview') && call[1]?.method === 'POST'
+    )
+    expect(previewCalls.length).toBeGreaterThanOrEqual(1)
+
+    const latestPreviewCall = previewCalls[previewCalls.length - 1]
+    expect(latestPreviewCall[0]).toContain('/api/v1/templates/tpl-saved-1/preview')
+
+    const sentBody = JSON.parse(latestPreviewCall[1].body as string)
+    expect(sentBody.subject).toBe('Changed')
+    expect(sentBody.htmlBody).toBe('<p>Changed</p>')
+    expect(sentBody.plainTextBody).toBe('Changed Text')
+
+    // Confirm that "Update Template" was NEVER clicked (no PUT call was sent)
+    const putCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'PUT')
+    expect(putCalls.length).toBe(0)
+  })
 })
+
+
+

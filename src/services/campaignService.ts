@@ -10,6 +10,8 @@ export interface CampaignService {
   createCampaign(data: CreateCampaignInput, client?: ApiClient, signal?: AbortSignal): Promise<Campaign>
   updateCampaign(id: string, data: UpdateCampaignInput, client?: ApiClient, signal?: AbortSignal): Promise<Campaign>
   deleteCampaign(id: string, client?: ApiClient, signal?: AbortSignal): Promise<void>
+  scheduleCampaign(id: string, scheduledAt: string, client?: ApiClient, signal?: AbortSignal): Promise<Campaign>
+  cancelCampaign(id: string, client?: ApiClient, signal?: AbortSignal): Promise<Campaign>
 }
 
 export const campaignService: CampaignService = {
@@ -32,4 +34,13 @@ export const campaignService: CampaignService = {
   async deleteCampaign(id: string, client: ApiClient = apiClient, signal?: AbortSignal): Promise<void> {
     return client.delete<void>(`/api/v1/campaigns/${encodeURIComponent(id)}`, { signal })
   },
+
+  async scheduleCampaign(id: string, scheduledAt: string, client: ApiClient = apiClient, signal?: AbortSignal): Promise<Campaign> {
+    return client.post<Campaign>(`/api/v1/campaigns/${encodeURIComponent(id)}/schedule`, { scheduledAt }, { signal })
+  },
+
+  async cancelCampaign(id: string, client: ApiClient = apiClient, signal?: AbortSignal): Promise<Campaign> {
+    return client.post<Campaign>(`/api/v1/campaigns/${encodeURIComponent(id)}/cancel`, {}, { signal })
+  },
 }
+

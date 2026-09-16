@@ -1,6 +1,6 @@
 import { apiClient } from './apiClient'
 import type { ApiClient } from '../types/api'
-import type { CreateTemplateInput, EmailTemplate, UpdateTemplateInput } from '../types'
+import type { CreateTemplateInput, EmailTemplate, PreviewTemplateRequest, PreviewTemplateResponse, UpdateTemplateInput } from '../types'
 
 export interface TemplateService {
   getTemplates(client?: ApiClient, signal?: AbortSignal): Promise<EmailTemplate[]>
@@ -8,6 +8,7 @@ export interface TemplateService {
   createTemplate(data: CreateTemplateInput, client?: ApiClient, signal?: AbortSignal): Promise<EmailTemplate>
   updateTemplate(id: string, data: UpdateTemplateInput, client?: ApiClient, signal?: AbortSignal): Promise<EmailTemplate>
   deleteTemplate(id: string, client?: ApiClient, signal?: AbortSignal): Promise<void>
+  previewTemplate(id: string, data?: PreviewTemplateRequest, client?: ApiClient, signal?: AbortSignal): Promise<PreviewTemplateResponse>
 }
 
 export const templateService: TemplateService = {
@@ -29,5 +30,18 @@ export const templateService: TemplateService = {
 
   async deleteTemplate(id: string, client: ApiClient = apiClient, signal?: AbortSignal): Promise<void> {
     return client.delete<void>(`/api/v1/templates/${encodeURIComponent(id)}`, { signal })
+  },
+
+  async previewTemplate(
+    id: string,
+    data: PreviewTemplateRequest = {},
+    client: ApiClient = apiClient,
+    signal?: AbortSignal
+  ): Promise<PreviewTemplateResponse> {
+    return client.post<PreviewTemplateResponse>(
+      `/api/v1/templates/${encodeURIComponent(id)}/preview`,
+      data,
+      { signal }
+    )
   },
 }

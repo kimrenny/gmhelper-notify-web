@@ -36,3 +36,8 @@ export interface UpdateCampaignInput {
   status?: CampaignStatus
   scheduledAt?: string
 }
+
+export interface ScheduleCampaignInput {
+  scheduledAt: string
+}
+

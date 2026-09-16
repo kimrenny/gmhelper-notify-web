@@ -180,4 +180,38 @@ describe('templateService', () => {
     expect(calledUrl).toContain('/api/v1/templates/tpl-101')
     expect(calledOptions.method).toBe('DELETE')
   })
+
+  it('previewTemplate sends POST to /api/v1/templates/{id}/preview with payload', async () => {
+    const previewData = {
+      subject: 'Hello {{name}}',
+      htmlBody: '<h1>Hello {{name}}</h1>',
+      plainTextBody: 'Hello {{name}}',
+      variables: { name: 'Alice' },
+    }
+
+    const mockResponse = {
+      subject: 'Hello Alice',
+      htmlBody: '<h1>Hello Alice</h1>',
+      plainTextBody: 'Hello Alice',
+    }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    const client = createApiClient('token-prev')
+    const result = await templateService.previewTemplate('tpl-101', previewData, client)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0]
+    expect(calledUrl).toContain('/api/v1/templates/tpl-101/preview')
+    expect(calledOptions.method).toBe('POST')
+    expect(calledOptions.body).toBe(JSON.stringify(previewData))
+    expect(result).toEqual(mockResponse)
+  })
 })
+
