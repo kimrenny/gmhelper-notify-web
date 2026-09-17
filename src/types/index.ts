@@ -59,4 +59,5 @@ export * from './api'
 export * from './campaign'
 export * from './dashboard'
 export * from './automation'
+export * from './agreement'
 
