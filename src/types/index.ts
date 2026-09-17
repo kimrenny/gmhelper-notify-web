@@ -60,4 +60,6 @@ export * from './campaign'
 export * from './dashboard'
 export * from './automation'
 export * from './agreement'
+export * from './direct'
+export * from './user'
 

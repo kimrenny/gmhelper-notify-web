@@ -5,4 +5,5 @@ export * from './authService'
 export * from './dashboardService'
 export * from './automationService'
 export * from './agreementService'
-
+export * from './directService'
+export * from './userService'
