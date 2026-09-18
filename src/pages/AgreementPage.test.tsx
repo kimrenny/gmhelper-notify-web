@@ -29,6 +29,7 @@ describe('AgreementPage component', () => {
       id: 'tpl-active-1',
       templateKey: 'terms_update',
       name: 'Terms of Service Update 2026',
+      templateType: 'user_agreement',
       subject: 'Important update to our Terms of Service',
       htmlBody: '<h1>Terms Update</h1><p>Please review our new terms.</p>',
       plainTextBody: 'Please review our new terms.',
@@ -42,6 +43,7 @@ describe('AgreementPage component', () => {
       id: 'tpl-active-2',
       templateKey: 'privacy_policy',
       name: 'Privacy Policy Notice',
+      templateType: 'user_agreement',
       subject: 'Notice regarding our Privacy Policy',
       htmlBody: '<h1>Privacy Policy</h1><p>We updated our privacy practices.</p>',
       plainTextBody: 'We updated our privacy practices.',
@@ -55,6 +57,7 @@ describe('AgreementPage component', () => {
       id: 'tpl-draft-1',
       templateKey: 'draft_terms',
       name: 'Draft Terms (Should Be Filtered)',
+      templateType: 'user_agreement',
       subject: 'Draft Subject',
       htmlBody: '<p>Draft</p>',
       locale: 'en',
@@ -67,6 +70,7 @@ describe('AgreementPage component', () => {
       id: 'tpl-archived-1',
       templateKey: 'old_terms',
       name: 'Archived Terms (Should Be Filtered)',
+      templateType: 'user_agreement',
       subject: 'Archived Subject',
       htmlBody: '<p>Archived</p>',
       locale: 'en',
@@ -1287,5 +1291,106 @@ describe('AgreementPage component', () => {
       expect(screen.getByTestId('campaign-status-badge').textContent).toBe('partially failed')
       expect(screen.getByTestId('status-partially-failed-banner')).toBeDefined()
     })
+  })
+
+  it('26. Only displays active user_agreement templates and excludes inactive or other type templates', async () => {
+    const mixedTemplates = [
+      {
+        id: 'tpl-agree-active',
+        templateKey: 'agree_active',
+        name: 'Active Agreement Template',
+        templateType: 'user_agreement',
+        subject: 'Agree Active Sub',
+        htmlBody: '<p>Agree Active</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-agree-draft',
+        templateKey: 'agree_draft',
+        name: 'Draft Agreement Template',
+        templateType: 'user_agreement',
+        subject: 'Agree Draft Sub',
+        htmlBody: '<p>Agree Draft</p>',
+        locale: 'en',
+        status: 'draft',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-direct-active',
+        templateKey: 'direct_active',
+        name: 'Active Direct Template',
+        templateType: 'direct',
+        subject: 'Direct Sub',
+        htmlBody: '<p>Direct</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-campaign-active',
+        templateKey: 'campaign_active',
+        name: 'Active Campaign Template',
+        templateType: 'campaign',
+        subject: 'Camp Sub',
+        htmlBody: '<p>Camp</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-automation-active',
+        templateKey: 'automation_active',
+        name: 'Active Automation Template',
+        templateType: 'automation',
+        subject: 'Auto Sub',
+        htmlBody: '<p>Auto</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(mixedTemplates), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify(null), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<AgreementPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-select')).toBeDefined()
+    })
+
+    const select = screen.getByTestId('template-select') as HTMLSelectElement
+    expect(select.textContent).toContain('Active Agreement Template')
+    expect(select.textContent).not.toContain('Draft Agreement Template')
+    expect(select.textContent).not.toContain('Active Direct Template')
+    expect(select.textContent).not.toContain('Active Campaign Template')
+    expect(select.textContent).not.toContain('Active Automation Template')
   })
 })

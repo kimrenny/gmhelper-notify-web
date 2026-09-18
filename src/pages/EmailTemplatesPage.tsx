@@ -1,17 +1,21 @@
 import { type ChangeEvent, type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useApiClient } from '../hooks/useApiClient'
 import { ApiError, templateService } from '../services'
-import type {
-  CreateTemplateInput,
-  EmailTemplate,
-  PreviewTemplateRequest,
-  PreviewTemplateResponse,
-  UpdateTemplateInput,
+import {
+  type CreateTemplateInput,
+  type EmailTemplate,
+  type PreviewTemplateRequest,
+  type PreviewTemplateResponse,
+  TEMPLATE_TYPE_LABELS,
+  TEMPLATE_TYPE_OPTIONS,
+  type TemplateType,
+  type UpdateTemplateInput,
 } from '../types'
 
 interface FormState {
   templateKey: string
   name: string
+  templateType: TemplateType | ''
   subject: string
   htmlBody: string
   plainTextBody: string
@@ -23,6 +27,7 @@ interface FormState {
 const initialFormState: FormState = {
   templateKey: '',
   name: '',
+  templateType: '',
   subject: '',
   htmlBody: '',
   plainTextBody: '',
@@ -52,6 +57,10 @@ function EmailTemplatesPage() {
   const [templates, setTemplates] = useState<EmailTemplate[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
+
+  // Filter and search states
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [searchQuery, setSearchQuery] = useState<string>('')
 
   // Form states
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -203,6 +212,7 @@ function EmailTemplatesPage() {
     setFormData({
       templateKey: template.templateKey,
       name: template.name,
+      templateType: template.templateType,
       subject: template.subject,
       htmlBody: template.htmlBody,
       plainTextBody: template.plainTextBody ?? '',
@@ -252,6 +262,9 @@ function EmailTemplatesPage() {
     if (!formData.templateKey.trim()) {
       errors.templateKey = 'Template key is required'
     }
+    if (!formData.templateType) {
+      errors.templateType = 'Template type is required'
+    }
     if (!formData.subject.trim()) {
       errors.subject = 'Subject is required'
     }
@@ -276,6 +289,7 @@ function EmailTemplatesPage() {
         const updateData: UpdateTemplateInput = {
           templateKey: formData.templateKey.trim(),
           name: formData.name.trim(),
+          templateType: editingTemplate.templateType,
           subject: formData.subject.trim(),
           htmlBody: formData.htmlBody,
           plainTextBody: formData.plainTextBody.trim() || undefined,
@@ -290,6 +304,7 @@ function EmailTemplatesPage() {
         const createData: CreateTemplateInput = {
           templateKey: formData.templateKey.trim(),
           name: formData.name.trim(),
+          templateType: formData.templateType as TemplateType,
           subject: formData.subject.trim(),
           htmlBody: formData.htmlBody,
           plainTextBody: formData.plainTextBody.trim() || undefined,
@@ -484,10 +499,11 @@ function EmailTemplatesPage() {
             <form onSubmit={(e) => void handleFormSubmit(e)} style={{ display: 'grid', gap: '1rem' }}>
               <div className="gm-admin-grid gm-admin-grid--2">
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  <label htmlFor="template-name" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
                     Name <span style={{ color: '#f87171' }}>*</span>
                   </label>
                   <input
+                    id="template-name"
                     name="name"
                     className="gm-admin-input"
                     placeholder="e.g. Welcome Email"
@@ -501,10 +517,11 @@ function EmailTemplatesPage() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  <label htmlFor="template-key" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
                     Template Key <span style={{ color: '#f87171' }}>*</span>
                   </label>
                   <input
+                    id="template-key"
                     name="templateKey"
                     className="gm-admin-input"
                     placeholder="e.g. welcome_email"
@@ -518,11 +535,71 @@ function EmailTemplatesPage() {
                 </div>
               </div>
 
+              {/* Template Type */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                <label htmlFor="template-type" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                  Template Type {!editingTemplate && <span style={{ color: '#f87171' }}>*</span>}
+                </label>
+                {editingTemplate ? (
+                  <div>
+                    <div
+                      data-testid="readonly-template-type"
+                      style={{
+                        padding: '0.55rem 0.75rem',
+                        background: 'rgba(30, 41, 59, 0.5)',
+                        border: '1px solid rgba(148, 163, 184, 0.2)',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}
+                    >
+                      <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+                        {TEMPLATE_TYPE_LABELS[formData.templateType as TemplateType] ?? formData.templateType}
+                      </span>
+                      <span style={{ fontSize: '0.8rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                        Immutable
+                      </span>
+                    </div>
+                    <span style={{ color: '#94a3b8', fontSize: '0.8rem', marginTop: '0.25rem', display: 'block' }}>
+                      Template type cannot be changed after creation.
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      id="template-type"
+                      name="templateType"
+                      className="gm-admin-select"
+                      value={formData.templateType}
+                      onChange={handleInputChange}
+                      disabled={isSaving}
+                      data-testid="template-type-select"
+                    >
+                      <option value="" disabled>
+                        Select a template type...
+                      </option>
+                      {TEMPLATE_TYPE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    {formValidationErrors.templateType && (
+                      <span style={{ color: '#f87171', fontSize: '0.85rem' }} data-testid="template-type-error">
+                        {formValidationErrors.templateType}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                <label htmlFor="template-subject" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
                   Subject <span style={{ color: '#f87171' }}>*</span>
                 </label>
                 <input
+                  id="template-subject"
                   name="subject"
                   className="gm-admin-input"
                   placeholder="e.g. Welcome to GMHelper!"
@@ -537,8 +614,9 @@ function EmailTemplatesPage() {
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Locale</label>
+                  <label htmlFor="template-locale" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Locale</label>
                   <input
+                    id="template-locale"
                     name="locale"
                     className="gm-admin-input"
                     placeholder="en"
@@ -549,8 +627,9 @@ function EmailTemplatesPage() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Status</label>
+                  <label htmlFor="template-status" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Status</label>
                   <select
+                    id="template-status"
                     name="status"
                     className="gm-admin-select"
                     value={formData.status}
@@ -564,8 +643,9 @@ function EmailTemplatesPage() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Version</label>
+                  <label htmlFor="template-version" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>Version</label>
                   <input
+                    id="template-version"
                     name="version"
                     type="number"
                     min="1"
@@ -578,10 +658,11 @@ function EmailTemplatesPage() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                <label htmlFor="template-html-body" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
                   HTML Body <span style={{ color: '#f87171' }}>*</span>
                 </label>
                 <textarea
+                  id="template-html-body"
                   name="htmlBody"
                   className="gm-admin-input"
                   placeholder="<p>Hello, welcome to our service...</p>"
@@ -597,10 +678,11 @@ function EmailTemplatesPage() {
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                <label style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
+                <label htmlFor="template-plain-text" style={{ color: '#cbd5e1', fontSize: '0.9rem', fontWeight: 500 }}>
                   Plain Text Body <span style={{ color: '#94a3b8', fontWeight: 400 }}>(Optional)</span>
                 </label>
                 <textarea
+                  id="template-plain-text"
                   name="plainTextBody"
                   className="gm-admin-input"
                   placeholder="Hello, welcome to our service..."
@@ -788,6 +870,74 @@ function EmailTemplatesPage() {
         </div>
       )}
 
+      {/* Filter and Search Bar (Visible when templates exist and not in loading state) */}
+      {!isLoading && !listError && templates.length > 0 && (
+        <div
+          className="gm-admin-card"
+          style={{
+            marginBottom: '1rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '1rem',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '0.875rem 1.25rem',
+          }}
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', flex: 1 }}>
+            <div style={{ minWidth: '220px', flex: 1, maxWidth: '360px' }}>
+              <input
+                type="search"
+                className="gm-admin-input"
+                placeholder="Search templates by name, key, or subject..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                aria-label="Search templates"
+                data-testid="template-search-input"
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <label
+                htmlFor="template-type-filter"
+                style={{ color: '#cbd5e1', fontSize: '0.875rem', fontWeight: 500, whiteSpace: 'nowrap' }}
+              >
+                Type:
+              </label>
+              <select
+                id="template-type-filter"
+                className="gm-admin-select"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                aria-label="Filter by template type"
+                data-testid="template-type-filter"
+                style={{ minWidth: '160px' }}
+              >
+                <option value="all">All Types</option>
+                <option value="direct">Direct Message</option>
+                <option value="campaign">Campaign</option>
+                <option value="user_agreement">User Agreement</option>
+                <option value="automation">Automation</option>
+              </select>
+            </div>
+          </div>
+
+          <div style={{ fontSize: '0.875rem', color: '#94a3b8' }}>
+            Showing {
+              templates.filter((template) => {
+                const matchesType = typeFilter === 'all' || template.templateType === typeFilter
+                const matchesSearch =
+                  !searchQuery.trim() ||
+                  template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  template.templateKey.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                  template.subject.toLowerCase().includes(searchQuery.toLowerCase())
+                return matchesType && matchesSearch
+              }).length
+            } of {templates.length} templates
+          </div>
+        </div>
+      )}
+
       {/* Templates Table / State Views */}
       {isLoading ? (
         <div className="gm-admin-card" style={{ padding: '3rem 1.5rem', textAlign: 'center' }}>
@@ -804,6 +954,44 @@ function EmailTemplatesPage() {
             <p style={{ margin: 0, color: '#cbd5e1' }}>No email templates found. Click "Add template" to create one.</p>
           </div>
         </div>
+      ) : templates.length > 0 &&
+        templates.filter((template) => {
+          const matchesType = typeFilter === 'all' || template.templateType === typeFilter
+          const matchesSearch =
+            !searchQuery.trim() ||
+            template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            template.templateKey.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            template.subject.toLowerCase().includes(searchQuery.toLowerCase())
+          return matchesType && matchesSearch
+        }).length === 0 &&
+        !listError &&
+        !isFormOpen ? (
+        <div className="gm-admin-card">
+          <div
+            className="gm-admin-empty"
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: '12rem',
+              gap: '0.75rem',
+            }}
+          >
+            <p style={{ margin: 0, color: '#cbd5e1' }}>No email templates match your filter criteria.</p>
+            <button
+              type="button"
+              className="gm-admin-btn"
+              onClick={() => {
+                setTypeFilter('all')
+                setSearchQuery('')
+              }}
+              data-testid="reset-filter-btn"
+            >
+              Reset filters
+            </button>
+          </div>
+        </div>
       ) : (
         <div className="gm-admin-card" style={{ overflowX: 'auto', padding: 0 }}>
           <table className="gm-admin-table">
@@ -811,76 +999,117 @@ function EmailTemplatesPage() {
               <tr>
                 <th>Name</th>
                 <th>Key / Subject</th>
+                <th>Type</th>
                 <th>Status</th>
                 <th>Updated</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              {templates.map((template) => (
-                <tr key={template.id}>
-                  <td>
-                    <div style={{ fontWeight: 600 }}>{template.name}</div>
-                    <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
-                      v{template.version} ({template.locale})
-                    </div>
-                  </td>
-                  <td>
-                    <div style={{ color: '#ffffff' }}>{template.subject}</div>
-                    <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
-                      {template.templateKey}
-                    </div>
-                  </td>
-                  <td>
-                    <span
-                      style={{
-                        display: 'inline-block',
-                        padding: '0.2rem 0.55rem',
-                        borderRadius: '4px',
-                        fontSize: '0.8rem',
-                        fontWeight: 600,
-                        textTransform: 'capitalize',
-                        background:
-                          template.status === 'active'
-                            ? 'rgba(34, 197, 94, 0.15)'
-                            : template.status === 'draft'
-                              ? 'rgba(234, 179, 8, 0.15)'
-                              : 'rgba(148, 163, 184, 0.15)',
-                        color:
-                          template.status === 'active'
-                            ? '#4ade80'
-                            : template.status === 'draft'
-                              ? '#facc15'
-                              : '#94a3b8',
-                      }}
-                    >
-                      {template.status}
-                    </span>
-                  </td>
-                  <td className="gm-admin-muted">{formatDateTime(template.updatedAt)}</td>
-                  <td>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button
-                        type="button"
-                        className="gm-admin-btn"
-                        onClick={() => openEditForm(template)}
-                        disabled={isSaving || isDeleting}
+              {templates
+                .filter((template) => {
+                  const matchesType = typeFilter === 'all' || template.templateType === typeFilter
+                  const matchesSearch =
+                    !searchQuery.trim() ||
+                    template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    template.templateKey.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    template.subject.toLowerCase().includes(searchQuery.toLowerCase())
+                  return matchesType && matchesSearch
+                })
+                .map((template) => (
+                  <tr key={template.id} data-testid={`template-row-${template.id}`}>
+                    <td>
+                      <div style={{ fontWeight: 600 }}>{template.name}</div>
+                      <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
+                        v{template.version} ({template.locale})
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ color: '#ffffff' }}>{template.subject}</div>
+                      <div className="gm-admin-muted" style={{ fontSize: '0.85rem' }}>
+                        {template.templateKey}
+                      </div>
+                    </td>
+                    <td>
+                      <span
+                        data-testid={`template-type-badge-${template.id}`}
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '4px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          background:
+                            template.templateType === 'direct'
+                              ? 'rgba(56, 189, 248, 0.15)'
+                              : template.templateType === 'campaign'
+                                ? 'rgba(168, 85, 247, 0.15)'
+                                : template.templateType === 'user_agreement'
+                                  ? 'rgba(251, 146, 60, 0.15)'
+                                  : 'rgba(45, 212, 191, 0.15)',
+                          color:
+                            template.templateType === 'direct'
+                              ? '#38bdf8'
+                              : template.templateType === 'campaign'
+                                ? '#c084fc'
+                                : template.templateType === 'user_agreement'
+                                  ? '#fb923c'
+                                  : '#2dd4bf',
+                        }}
                       >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="gm-admin-btn"
-                        style={{ color: '#fecaca', borderColor: 'rgba(248,113,113,0.3)' }}
-                        onClick={() => promptDelete(template)}
-                        disabled={isSaving || isDeleting}
+                        {TEMPLATE_TYPE_LABELS[template.templateType] ?? template.templateType}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '4px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          textTransform: 'capitalize',
+                          background:
+                            template.status === 'active'
+                              ? 'rgba(34, 197, 94, 0.15)'
+                              : template.status === 'draft'
+                                ? 'rgba(234, 179, 8, 0.15)'
+                                : 'rgba(148, 163, 184, 0.15)',
+                          color:
+                            template.status === 'active'
+                              ? '#4ade80'
+                              : template.status === 'draft'
+                                ? '#facc15'
+                                : '#94a3b8',
+                        }}
                       >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                        {template.status}
+                      </span>
+                    </td>
+                    <td className="gm-admin-muted">{formatDateTime(template.updatedAt)}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          className="gm-admin-btn"
+                          onClick={() => openEditForm(template)}
+                          disabled={isSaving || isDeleting}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="gm-admin-btn"
+                          style={{ color: '#fecaca', borderColor: 'rgba(248,113,113,0.3)' }}
+                          onClick={() => promptDelete(template)}
+                          disabled={isSaving || isDeleting}
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>

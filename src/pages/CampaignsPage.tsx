@@ -2,6 +2,7 @@ import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useApiClient } from '../hooks/useApiClient'
 import { ApiError, campaignService, templateService } from '../services'
 import type { Campaign, EmailTemplate } from '../types'
+import { filterTemplatesByType } from '../utils'
 
 interface ErrorInfo {
   type: 'unauthorized' | 'forbidden' | 'api' | 'network'
@@ -47,7 +48,7 @@ function formatDateTime(dateStr?: string): string {
     if (isNaN(date.getTime())) {
       return dateStr
     }
-    return date.toLocaleString(undefined, {
+    return date.toLocaleDateString(undefined, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -158,7 +159,8 @@ function CampaignsPage() {
   const loadTemplates = useCallback(async (signal?: AbortSignal) => {
     try {
       const data = await templateService.getTemplates(apiClient, signal)
-      setTemplates(data ?? [])
+      const campaignTemplates = filterTemplatesByType(data, 'campaign')
+      setTemplates(campaignTemplates)
     } catch {
       // Non-blocking template loading
     }
@@ -808,15 +810,17 @@ function CampaignsPage() {
                 </div>
 
                 <div>
-                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                  <label htmlFor="campaign-template-select" style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
                     Email template selector <span style={{ color: '#f87171' }}>*</span>
                   </label>
                   <select
+                    id="campaign-template-select"
                     name="templateId"
                     className="gm-admin-select"
                     value={formData.templateId}
                     onChange={(e) => handleTemplateChange(e.target.value)}
                     disabled={isSubmitting || isLoadingCampaign}
+                    data-testid="campaign-template-select"
                   >
                     <option value="">Select template</option>
                     {templates.map((tpl) => (

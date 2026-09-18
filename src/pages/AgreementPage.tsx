@@ -13,6 +13,7 @@ import type {
   PreviewTemplateRequest,
   PreviewTemplateResponse,
 } from '../types'
+import { filterTemplatesByType } from '../utils'
 
 interface ErrorInfo {
   type: 'unauthorized' | 'forbidden' | 'api' | 'network'
@@ -88,7 +89,7 @@ function AgreementPage() {
   // Campaign progress tracking
   const [createdCampaign, setCreatedCampaign] = useState<Campaign | null>(null)
 
-  // 1. Load active templates
+  // 1. Load active user_agreement templates
   const loadTemplates = useCallback(
     async (signal?: AbortSignal) => {
       setIsTemplatesLoading(true)
@@ -96,10 +97,10 @@ function AgreementPage() {
 
       try {
         const allTemplates = await templateService.getTemplates(apiClient, signal)
-        const activeTemplates = (allTemplates ?? []).filter(
-          (t) => t.status?.toLowerCase() === 'active'
-        )
-        setTemplates(activeTemplates)
+        const activeAgreementTemplates = filterTemplatesByType(allTemplates, 'user_agreement', {
+          onlyActive: true,
+        })
+        setTemplates(activeAgreementTemplates)
       } catch (err) {
         if (signal?.aborted) {
           return

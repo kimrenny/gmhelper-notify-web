@@ -5,10 +5,27 @@ export interface AppMetadata {
 
 export type TemplateStatus = 'draft' | 'active' | 'archived'
 
+export type TemplateType = 'direct' | 'campaign' | 'user_agreement' | 'automation'
+
+export const TEMPLATE_TYPE_LABELS: Record<TemplateType, string> = {
+  direct: 'Direct Message',
+  campaign: 'Campaign',
+  user_agreement: 'User Agreement',
+  automation: 'Automation',
+}
+
+export const TEMPLATE_TYPE_OPTIONS: { value: TemplateType; label: string }[] = [
+  { value: 'direct', label: 'Direct Message' },
+  { value: 'campaign', label: 'Campaign' },
+  { value: 'user_agreement', label: 'User Agreement' },
+  { value: 'automation', label: 'Automation' },
+]
+
 export interface EmailTemplate {
   id: string
   templateKey: string
   name: string
+  templateType: TemplateType
   subject: string
   htmlBody: string
   plainTextBody?: string
@@ -22,6 +39,7 @@ export interface EmailTemplate {
 export interface CreateTemplateInput {
   templateKey: string
   name: string
+  templateType: TemplateType
   subject: string
   htmlBody: string
   plainTextBody?: string
@@ -33,6 +51,7 @@ export interface CreateTemplateInput {
 export interface UpdateTemplateInput {
   templateKey: string
   name: string
+  templateType?: TemplateType
   subject: string
   htmlBody: string
   plainTextBody?: string
