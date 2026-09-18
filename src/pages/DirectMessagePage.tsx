@@ -11,9 +11,10 @@ import {
   buildNotificationPayload,
   categorizeVariables,
   extractTemplateVariables,
+  filterTemplatesByType,
   isValidEmail,
   renderPreviewText,
-} from '../utils/directMessage'
+} from '../utils'
 
 export type RecipientMode = 'registered' | 'custom'
 
@@ -97,7 +98,7 @@ export function DirectMessagePage() {
   // Polling timer ref
   const pollingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Load active templates on mount
+  // Load active direct templates on mount
   useEffect(() => {
     let isMounted = true
     setTemplatesLoading(true)
@@ -107,8 +108,8 @@ export function DirectMessagePage() {
       .getTemplates(client)
       .then((data) => {
         if (!isMounted) return
-        const activeTemplates = data.filter((t) => t.status === 'active')
-        setTemplates(activeTemplates)
+        const directTemplates = filterTemplatesByType(data, 'direct', { onlyActive: true })
+        setTemplates(directTemplates)
         setTemplatesLoading(false)
       })
       .catch((err) => {

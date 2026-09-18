@@ -28,6 +28,7 @@ describe('EmailTemplatesPage component', () => {
       id: 'tpl-1',
       templateKey: 'welcome_email',
       name: 'Welcome Email',
+      templateType: 'campaign',
       subject: 'Welcome to GMHelper!',
       htmlBody: '<p>Welcome!</p>',
       plainTextBody: 'Welcome!',
@@ -41,6 +42,7 @@ describe('EmailTemplatesPage component', () => {
       id: 'tpl-2',
       templateKey: 'reminder_email',
       name: 'Reminder Email',
+      templateType: 'direct',
       subject: 'Action Required',
       htmlBody: '<p>Reminder</p>',
       locale: 'en',
@@ -195,6 +197,9 @@ describe('EmailTemplatesPage component', () => {
     })
     fireEvent.change(screen.getByPlaceholderText('e.g. welcome_email'), {
       target: { value: 'verify_email' },
+    })
+    fireEvent.change(screen.getByTestId('template-type-select'), {
+      target: { value: 'campaign' },
     })
     fireEvent.change(screen.getByPlaceholderText('e.g. Welcome to GMHelper!'), {
       target: { value: 'Please verify your email' },
@@ -680,6 +685,7 @@ describe('EmailTemplatesPage component', () => {
       id: 'tpl-saved-1',
       templateKey: 'saved_key',
       name: 'Saved Name',
+      templateType: 'campaign',
       subject: 'Original',
       htmlBody: '<p>Original</p>',
       plainTextBody: 'Original Text',
@@ -773,6 +779,551 @@ describe('EmailTemplatesPage component', () => {
     // Confirm that "Update Template" was NEVER clicked (no PUT call was sent)
     const putCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'PUT')
     expect(putCalls.length).toBe(0)
+  })
+
+  it('16. Create form requires selecting a template type and shows validation error when omitted', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Add template/i })).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Add template/i }))
+
+    // Fill all required fields EXCEPT templateType
+    fireEvent.change(screen.getByPlaceholderText('e.g. Welcome Email'), {
+      target: { value: 'Test Template' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('e.g. welcome_email'), {
+      target: { value: 'test_key' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('e.g. Welcome to GMHelper!'), {
+      target: { value: 'Test Subject' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('<p>Hello, welcome to our service...</p>'), {
+      target: { value: '<p>Test Body</p>' },
+    })
+
+    // Submit form
+    fireEvent.click(screen.getByRole('button', { name: /Create Template/i }))
+
+    // Expect validation error for template type
+    expect(screen.getByTestId('template-type-error').textContent).toBe('Template type is required')
+
+    // Confirm no POST call was dispatched
+    const postCalls = mockFetch.mock.calls.filter((call) => call[1]?.method === 'POST')
+    expect(postCalls.length).toBe(0)
+  })
+
+  it('17. Create form renders all four supported template types in the dropdown', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Add template/i })).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Add template/i }))
+
+    const select = screen.getByTestId('template-type-select') as HTMLSelectElement
+    const options = Array.from(select.options).map((opt) => ({
+      value: opt.value,
+      label: opt.text,
+      disabled: opt.disabled,
+    }))
+
+    expect(options).toEqual([
+      { value: '', label: 'Select a template type...', disabled: true },
+      { value: 'direct', label: 'Direct Message', disabled: false },
+      { value: 'campaign', label: 'Campaign', disabled: false },
+      { value: 'user_agreement', label: 'User Agreement', disabled: false },
+      { value: 'automation', label: 'Automation', disabled: false },
+    ])
+  })
+
+  it('18. Create request sends the selected templateType for each of the four supported types', async () => {
+    const typesToTest = [
+      { value: 'direct', label: 'Direct Message' },
+      { value: 'campaign', label: 'Campaign' },
+      { value: 'user_agreement', label: 'User Agreement' },
+      { value: 'automation', label: 'Automation' },
+    ] as const
+
+    for (const testType of typesToTest) {
+      let createdPayload: any = null
+      const mockFetch = vi.fn().mockImplementation((_url: string, options?: RequestInit) => {
+        if (options?.method === 'POST') {
+          createdPayload = JSON.parse(options.body as string)
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                id: `tpl-${testType.value}`,
+                ...createdPayload,
+                createdAt: '2026-09-17T00:00:00Z',
+                updatedAt: '2026-09-17T00:00:00Z',
+              }),
+              { status: 201, headers: { 'Content-Type': 'application/json' } }
+            )
+          )
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      })
+      globalThis.fetch = mockFetch
+
+      const { unmount } = render(<EmailTemplatesPage />)
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Add template/i })).toBeDefined()
+      })
+
+      fireEvent.click(screen.getByRole('button', { name: /Add template/i }))
+
+      fireEvent.change(screen.getByPlaceholderText('e.g. Welcome Email'), {
+        target: { value: `${testType.label} Template` },
+      })
+      fireEvent.change(screen.getByPlaceholderText('e.g. welcome_email'), {
+        target: { value: `key_${testType.value}` },
+      })
+      fireEvent.change(screen.getByTestId('template-type-select'), {
+        target: { value: testType.value },
+      })
+      fireEvent.change(screen.getByPlaceholderText('e.g. Welcome to GMHelper!'), {
+        target: { value: `Subject for ${testType.label}` },
+      })
+      fireEvent.change(screen.getByPlaceholderText('<p>Hello, welcome to our service...</p>'), {
+        target: { value: `<p>Body for ${testType.label}</p>` },
+      })
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Create Template/i }))
+      })
+
+      expect(createdPayload).not.toBeNull()
+      expect(createdPayload.templateType).toBe(testType.value)
+
+      unmount()
+      cleanup()
+    }
+  })
+
+  it('19. Edit form displays existing template type as immutable readonly text and does not allow editing', async () => {
+    const mockTemplate = {
+      id: 'tpl-agreement-1',
+      templateKey: 'terms_update',
+      name: 'Terms Update Agreement',
+      templateType: 'user_agreement',
+      subject: 'Updated Terms of Service',
+      htmlBody: '<p>Please accept updated terms.</p>',
+      plainTextBody: 'Please accept updated terms.',
+      locale: 'en',
+      status: 'active',
+      version: 1,
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([mockTemplate]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Terms Update Agreement')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }))
+
+    // Readonly template type container should be present and show "User Agreement"
+    const readonlyType = screen.getByTestId('readonly-template-type')
+    expect(readonlyType.textContent).toContain('User Agreement')
+    expect(readonlyType.textContent).toContain('Immutable')
+    expect(screen.getByText('Template type cannot be changed after creation.')).toBeDefined()
+
+    // The editable select must NOT be in the document
+    expect(screen.queryByTestId('template-type-select')).toBeNull()
+  })
+
+  it('20. Edit form preserves templateType in update request', async () => {
+    const mockTemplate = {
+      id: 'tpl-auto-1',
+      templateKey: 'auto_alert',
+      name: 'Automation Alert',
+      templateType: 'automation',
+      subject: 'System Alert',
+      htmlBody: '<p>System alert body</p>',
+      plainTextBody: 'System alert body',
+      locale: 'en',
+      status: 'active',
+      version: 1,
+      createdAt: '2026-09-01T00:00:00Z',
+      updatedAt: '2026-09-01T00:00:00Z',
+    }
+
+    let putPayload: any = null
+    const mockFetch = vi.fn().mockImplementation((_url: string, options?: RequestInit) => {
+      if (options?.method === 'PUT') {
+        putPayload = JSON.parse(options.body as string)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...mockTemplate,
+              ...putPayload,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([mockTemplate]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Automation Alert')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /Edit/i }))
+
+    fireEvent.change(screen.getByPlaceholderText('e.g. Welcome Email'), {
+      target: { value: 'Automation Alert (Renamed)' },
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Update Template/i }))
+    })
+
+    expect(putPayload).not.toBeNull()
+    expect(putPayload.templateType).toBe('automation')
+  })
+
+  it('21. Template list displays human-readable type labels for all template types', async () => {
+    const allTypeTemplates = [
+      {
+        id: 't-1',
+        templateKey: 'direct_msg',
+        name: 'Direct Notice',
+        templateType: 'direct',
+        subject: 'Direct Message Subject',
+        htmlBody: '<p>Direct</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-2',
+        templateKey: 'campaign_msg',
+        name: 'Newsletter Campaign',
+        templateType: 'campaign',
+        subject: 'Campaign Subject',
+        htmlBody: '<p>Campaign</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-3',
+        templateKey: 'agreement_msg',
+        name: 'EULA Agreement',
+        templateType: 'user_agreement',
+        subject: 'User Agreement Subject',
+        htmlBody: '<p>Agreement</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-4',
+        templateKey: 'automation_msg',
+        name: 'Auto Rule Alert',
+        templateType: 'automation',
+        subject: 'Automation Subject',
+        htmlBody: '<p>Automation</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(allTypeTemplates), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-type-badge-t-1').textContent).toBe('Direct Message')
+      expect(screen.getByTestId('template-type-badge-t-2').textContent).toBe('Campaign')
+      expect(screen.getByTestId('template-type-badge-t-3').textContent).toBe('User Agreement')
+      expect(screen.getByTestId('template-type-badge-t-4').textContent).toBe('Automation')
+    })
+  })
+
+  it('22. Type filter shows all supported options', async () => {
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockTemplates), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('template-type-filter')).toBeDefined()
+    })
+
+    const filterSelect = screen.getByTestId('template-type-filter') as HTMLSelectElement
+    const options = Array.from(filterSelect.options).map((opt) => ({
+      value: opt.value,
+      label: opt.text,
+    }))
+
+    expect(options).toEqual([
+      { value: 'all', label: 'All Types' },
+      { value: 'direct', label: 'Direct Message' },
+      { value: 'campaign', label: 'Campaign' },
+      { value: 'user_agreement', label: 'User Agreement' },
+      { value: 'automation', label: 'Automation' },
+    ])
+  })
+
+  it('23. Filtering by each type shows only matching templates and All Types restores complete list', async () => {
+    const multiTypeTemplates = [
+      {
+        id: 't-dir',
+        templateKey: 't_dir',
+        name: 'Direct Template',
+        templateType: 'direct',
+        subject: 'Direct Sub',
+        htmlBody: '<p>Direct</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-camp',
+        templateKey: 't_camp',
+        name: 'Campaign Template',
+        templateType: 'campaign',
+        subject: 'Camp Sub',
+        htmlBody: '<p>Camp</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-agree',
+        templateKey: 't_agree',
+        name: 'Agreement Template',
+        templateType: 'user_agreement',
+        subject: 'Agree Sub',
+        htmlBody: '<p>Agree</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-auto',
+        templateKey: 't_auto',
+        name: 'Automation Template',
+        templateType: 'automation',
+        subject: 'Auto Sub',
+        htmlBody: '<p>Auto</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(multiTypeTemplates), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Direct Template')).toBeDefined()
+      expect(screen.getByText('Campaign Template')).toBeDefined()
+      expect(screen.getByText('Agreement Template')).toBeDefined()
+      expect(screen.getByText('Automation Template')).toBeDefined()
+    })
+
+    const filterSelect = screen.getByTestId('template-type-filter')
+
+    // Filter by direct
+    fireEvent.change(filterSelect, { target: { value: 'direct' } })
+    expect(screen.getByText('Direct Template')).toBeDefined()
+    expect(screen.queryByText('Campaign Template')).toBeNull()
+    expect(screen.queryByText('Agreement Template')).toBeNull()
+    expect(screen.queryByText('Automation Template')).toBeNull()
+
+    // Filter by campaign
+    fireEvent.change(filterSelect, { target: { value: 'campaign' } })
+    expect(screen.queryByText('Direct Template')).toBeNull()
+    expect(screen.getByText('Campaign Template')).toBeDefined()
+    expect(screen.queryByText('Agreement Template')).toBeNull()
+    expect(screen.queryByText('Automation Template')).toBeNull()
+
+    // Filter by user_agreement
+    fireEvent.change(filterSelect, { target: { value: 'user_agreement' } })
+    expect(screen.queryByText('Direct Template')).toBeNull()
+    expect(screen.queryByText('Campaign Template')).toBeNull()
+    expect(screen.getByText('Agreement Template')).toBeDefined()
+    expect(screen.queryByText('Automation Template')).toBeNull()
+
+    // Filter by automation
+    fireEvent.change(filterSelect, { target: { value: 'automation' } })
+    expect(screen.queryByText('Direct Template')).toBeNull()
+    expect(screen.queryByText('Campaign Template')).toBeNull()
+    expect(screen.queryByText('Agreement Template')).toBeNull()
+    expect(screen.getByText('Automation Template')).toBeDefined()
+
+    // Restore All Types
+    fireEvent.change(filterSelect, { target: { value: 'all' } })
+    expect(screen.getByText('Direct Template')).toBeDefined()
+    expect(screen.getByText('Campaign Template')).toBeDefined()
+    expect(screen.getByText('Agreement Template')).toBeDefined()
+    expect(screen.getByText('Automation Template')).toBeDefined()
+  })
+
+  it('24. Filter works in combination with search query and handles empty filter results', async () => {
+    const templatesList = [
+      {
+        id: 't-1',
+        templateKey: 'welcome_direct',
+        name: 'Welcome Direct',
+        templateType: 'direct',
+        subject: 'Welcome to Platform',
+        htmlBody: '<p>Direct</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-2',
+        templateKey: 'welcome_campaign',
+        name: 'Welcome Campaign',
+        templateType: 'campaign',
+        subject: 'Welcome to Platform',
+        htmlBody: '<p>Campaign</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 't-3',
+        templateKey: 'promo_campaign',
+        name: 'Promo Campaign',
+        templateType: 'campaign',
+        subject: 'Special 50% Off Promo',
+        htmlBody: '<p>Promo</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(templatesList), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    render(<EmailTemplatesPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Welcome Direct')).toBeDefined()
+      expect(screen.getByText('Welcome Campaign')).toBeDefined()
+      expect(screen.getByText('Promo Campaign')).toBeDefined()
+    })
+
+    const searchInput = screen.getByTestId('template-search-input')
+    const filterSelect = screen.getByTestId('template-type-filter')
+
+    // Search "Welcome" - matches 2 templates (one direct, one campaign)
+    fireEvent.change(searchInput, { target: { value: 'Welcome' } })
+    expect(screen.getByText('Welcome Direct')).toBeDefined()
+    expect(screen.getByText('Welcome Campaign')).toBeDefined()
+    expect(screen.queryByText('Promo Campaign')).toBeNull()
+
+    // Narrow down by type = "campaign"
+    fireEvent.change(filterSelect, { target: { value: 'campaign' } })
+    expect(screen.queryByText('Welcome Direct')).toBeNull()
+    expect(screen.getByText('Welcome Campaign')).toBeDefined()
+
+    // Search term with no match for type "campaign"
+    fireEvent.change(searchInput, { target: { value: 'NonExistent' } })
+    expect(screen.getByText('No email templates match your filter criteria.')).toBeDefined()
+
+    // Reset filters button
+    fireEvent.click(screen.getByTestId('reset-filter-btn'))
+    expect(screen.getByText('Welcome Direct')).toBeDefined()
+    expect(screen.getByText('Welcome Campaign')).toBeDefined()
+    expect(screen.getByText('Promo Campaign')).toBeDefined()
   })
 })
 

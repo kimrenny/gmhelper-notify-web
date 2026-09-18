@@ -28,6 +28,7 @@ describe('CampaignsPage component', () => {
       id: 'tpl-101',
       templateKey: 'welcome_email',
       name: 'Welcome Email Template',
+      templateType: 'campaign',
       subject: 'Welcome to our platform!',
       htmlBody: '<p>Hello user!</p>',
       locale: 'en',
@@ -1574,5 +1575,95 @@ describe('CampaignsPage component', () => {
     await waitFor(() => {
       expect(screen.getByTestId('cancel-error').textContent).toContain('Network cancel failure')
     })
+  })
+
+  it('28. Only displays campaign templates in template selector and excludes non-campaign templates', async () => {
+    const mixedTemplates = [
+      {
+        id: 'tpl-camp-valid',
+        templateKey: 'camp_valid',
+        name: 'Valid Campaign Template',
+        templateType: 'campaign',
+        subject: 'Camp Subject',
+        htmlBody: '<p>Camp</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-direct-excl',
+        templateKey: 'direct_excl',
+        name: 'Excluded Direct Template',
+        templateType: 'direct',
+        subject: 'Direct Subject',
+        htmlBody: '<p>Direct</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-agree-excl',
+        templateKey: 'agree_excl',
+        name: 'Excluded Agreement Template',
+        templateType: 'user_agreement',
+        subject: 'Agree Subject',
+        htmlBody: '<p>Agree</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-auto-excl',
+        templateKey: 'auto_excl',
+        name: 'Excluded Automation Template',
+        templateType: 'automation',
+        subject: 'Auto Subject',
+        htmlBody: '<p>Auto</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(mixedTemplates), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /New Campaign/i })).toBeDefined()
+    })
+
+    // Open composer
+    fireEvent.click(screen.getByRole('button', { name: /New Campaign/i }))
+
+    const templateSelect = screen.getByTestId('campaign-template-select') as HTMLSelectElement
+    expect(templateSelect.textContent).toContain('Valid Campaign Template')
+    expect(templateSelect.textContent).not.toContain('Excluded Direct Template')
+    expect(templateSelect.textContent).not.toContain('Excluded Agreement Template')
+    expect(templateSelect.textContent).not.toContain('Excluded Automation Template')
   })
 })

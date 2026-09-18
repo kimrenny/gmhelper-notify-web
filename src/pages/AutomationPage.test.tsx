@@ -105,6 +105,7 @@ describe('AutomationPage component with Rule Builder', () => {
       id: 'tpl-1',
       templateKey: 'welcome_email',
       name: 'Welcome Email Template',
+      templateType: 'automation',
       subject: 'Welcome to our platform!',
       htmlBody: '<p>Welcome!</p>',
       locale: 'en',
@@ -117,6 +118,7 @@ describe('AutomationPage component with Rule Builder', () => {
       id: 'tpl-2',
       templateKey: 'password_reset',
       name: 'Password Reset Template',
+      templateType: 'automation',
       subject: 'Reset your password',
       htmlBody: '<p>Reset link</p>',
       locale: 'en',
@@ -826,5 +828,94 @@ describe('AutomationPage component with Rule Builder', () => {
       fireEvent.click(screen.getByTestId('submit-rule-btn'))
     })
     expect(screen.getByTestId('conditions-error')).toBeDefined()
+  })
+
+  it('12. Only displays automation templates in rule composer template selector and excludes non-automation templates', async () => {
+    const mixedTemplates: EmailTemplate[] = [
+      {
+        id: 'tpl-auto-valid',
+        templateKey: 'auto_valid',
+        name: 'Valid Automation Template',
+        templateType: 'automation',
+        subject: 'Auto Sub',
+        htmlBody: '<p>Auto</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-direct-excl',
+        templateKey: 'direct_excl',
+        name: 'Excluded Direct Template',
+        templateType: 'direct',
+        subject: 'Direct Sub',
+        htmlBody: '<p>Direct</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-camp-excl',
+        templateKey: 'camp_excl',
+        name: 'Excluded Campaign Template',
+        templateType: 'campaign',
+        subject: 'Camp Sub',
+        htmlBody: '<p>Camp</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-agree-excl',
+        templateKey: 'agree_excl',
+        name: 'Excluded Agreement Template',
+        templateType: 'user_agreement',
+        subject: 'Agree Sub',
+        htmlBody: '<p>Agree</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(mixedTemplates), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<AutomationPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-rule-btn')).toBeDefined()
+    })
+
+    fireEvent.click(screen.getByTestId('create-rule-btn'))
+
+    const select = screen.getByTestId('rule-template-select') as HTMLSelectElement
+    expect(select.textContent).toContain('Valid Automation Template')
+    expect(select.textContent).not.toContain('Excluded Direct Template')
+    expect(select.textContent).not.toContain('Excluded Campaign Template')
+    expect(select.textContent).not.toContain('Excluded Agreement Template')
   })
 })

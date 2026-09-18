@@ -75,8 +75,7 @@
   width: 100%;
 }
 
-.gm-admin-input,
-.gm-admin-select {
+.gm-admin-input {
   width: 100%;
   padding: 0.75rem 0.9rem;
   border-radius: 5px;
@@ -84,6 +83,33 @@
   background: #111111;
   color: #ffffff;
   font: inherit;
+}
+
+.gm-admin-select {
+  width: 100%;
+  padding: 0.75rem 2.5rem 0.75rem 0.9rem;
+  border-radius: 5px;
+  border: 1px solid #333333;
+  background-color: #111111;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2394a3b8'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.85rem center;
+  background-size: 1.15rem 1.15rem;
+  color: #ffffff;
+  font: inherit;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  &::-ms-expand {
+    display: none;
+  }
 }
 
 .gm-admin-input::placeholder,

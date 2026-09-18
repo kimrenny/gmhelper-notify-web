@@ -16,6 +16,7 @@ import type {
   ScheduleConfig,
   ScheduleType,
 } from '../types'
+import { filterTemplatesByType } from '../utils'
 
 interface ErrorInfo {
   type: 'unauthorized' | 'forbidden' | 'api' | 'network'
@@ -338,7 +339,8 @@ function AutomationPage() {
     async (signal?: AbortSignal) => {
       try {
         const data = await templateService.getTemplates(apiClient, signal)
-        setTemplates(data ?? [])
+        const automationTemplates = filterTemplatesByType(data, 'automation')
+        setTemplates(automationTemplates)
       } catch {
         // Non-blocking template loading
       }

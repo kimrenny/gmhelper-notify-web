@@ -30,6 +30,7 @@ describe('DirectMessagePage - Complete Workflow', () => {
       id: 'tpl-welcome',
       templateKey: 'welcome_user',
       name: 'Welcome Email',
+      templateType: 'direct',
       subject: 'Welcome, {{username}}!',
       htmlBody: '<p>Hello {{username}}, your role is {{role}}.</p>',
       locale: 'en',
@@ -42,6 +43,7 @@ describe('DirectMessagePage - Complete Workflow', () => {
       id: 'tpl-custom-vars',
       templateKey: 'order_receipt',
       name: 'Order Receipt',
+      templateType: 'direct',
       subject: 'Order #{{orderId}} confirmation for {{username}}',
       htmlBody: '<p>Hi {{username}}, your tracking code is {{trackingCode}} for order {{orderId}}.</p>',
       locale: 'en',
@@ -54,6 +56,7 @@ describe('DirectMessagePage - Complete Workflow', () => {
       id: 'tpl-no-vars',
       templateKey: 'static_notice',
       name: 'Static Notice',
+      templateType: 'direct',
       subject: 'System Maintenance Notice',
       htmlBody: '<p>The system will be undergoing maintenance tonight.</p>',
       locale: 'en',
@@ -66,6 +69,7 @@ describe('DirectMessagePage - Complete Workflow', () => {
       id: 'tpl-inactive',
       templateKey: 'old_template',
       name: 'Inactive Template',
+      templateType: 'direct',
       subject: 'Old subject',
       htmlBody: '<p>Old body</p>',
       locale: 'en',
@@ -666,5 +670,76 @@ describe('DirectMessagePage - Complete Workflow', () => {
       expect(screen.getByText('Template is inactive for delivery')).toBeDefined()
       expect(screen.queryByTestId('delivery-result-card')).toBeNull()
     })
+  })
+
+  it('only displays direct templates and excludes campaign, user_agreement, and automation templates', async () => {
+    const mixedTemplates: EmailTemplate[] = [
+      {
+        id: 'tpl-direct-valid',
+        templateKey: 'direct_valid',
+        name: 'Direct Valid Template',
+        templateType: 'direct',
+        subject: 'Direct Sub',
+        htmlBody: '<p>Direct</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-campaign-excluded',
+        templateKey: 'campaign_key',
+        name: 'Campaign Excluded Template',
+        templateType: 'campaign',
+        subject: 'Camp Sub',
+        htmlBody: '<p>Camp</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-agreement-excluded',
+        templateKey: 'agreement_key',
+        name: 'Agreement Excluded Template',
+        templateType: 'user_agreement',
+        subject: 'Agree Sub',
+        htmlBody: '<p>Agree</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+      {
+        id: 'tpl-automation-excluded',
+        templateKey: 'automation_key',
+        name: 'Automation Excluded Template',
+        templateType: 'automation',
+        subject: 'Auto Sub',
+        htmlBody: '<p>Auto</p>',
+        locale: 'en',
+        status: 'active',
+        version: 1,
+        createdAt: '2026-09-01T00:00:00Z',
+        updatedAt: '2026-09-01T00:00:00Z',
+      },
+    ]
+
+    vi.spyOn(templateService, 'getTemplates').mockResolvedValue(mixedTemplates)
+
+    render(<DirectMessagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /email template/i })).toBeDefined()
+    })
+
+    const select = screen.getByRole('combobox', { name: /email template/i })
+    expect(select.textContent).toContain('Direct Valid Template')
+    expect(select.textContent).not.toContain('Campaign Excluded Template')
+    expect(select.textContent).not.toContain('Agreement Excluded Template')
+    expect(select.textContent).not.toContain('Automation Excluded Template')
   })
 })
