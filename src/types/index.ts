@@ -81,4 +81,5 @@ export * from './automation'
 export * from './agreement'
 export * from './direct'
 export * from './user'
+export * from './settings'
 
