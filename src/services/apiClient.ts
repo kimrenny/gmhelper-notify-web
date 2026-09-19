@@ -95,6 +95,9 @@ export async function request<T>(
     if (err instanceof ApiError) {
       throw err
     }
+    if ((err as Error)?.name === 'AbortError' || options?.signal?.aborted) {
+      throw err
+    }
     const message = err instanceof Error ? err.message : 'Network connection error'
     throw new ApiError(message, 0, 'NETWORK_ERROR')
   }

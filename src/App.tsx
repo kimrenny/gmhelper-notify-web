@@ -4,6 +4,7 @@ import { ProtectedRoute } from './components'
 import AppLayout from './layouts/AppLayout'
 import AdminLayout from './layouts/AdminLayout/AdminLayout'
 import {
+  ActivityPage,
   AgreementPage,
   AutomationPage,
   CampaignsPage,
@@ -19,68 +20,84 @@ function App() {
       <ProtectedRoute>
         <AppLayout>
           <Routes>
-        <Route
-          path="/"
-          element={
-            <AdminLayout>
-              <DashboardPage />
-            </AdminLayout>
-          }
-        />
-        <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/"
+              element={
+                <AdminLayout>
+                  <DashboardPage />
+                </AdminLayout>
+              }
+            />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/activity"
+              element={
+                <AdminLayout>
+                  <ActivityPage />
+                </AdminLayout>
+              }
+            />
 
-        <Route path="/admin" element={<Navigate to="/" replace />} />
-        <Route path="/admin/dashboard" element={<Navigate to="/" replace />} />
-        <Route
-          path="/admin/campaigns"
-          element={
-            <AdminLayout>
-              <CampaignsPage />
-            </AdminLayout>
-          }
-        />
-        <Route
-          path="/admin/automation"
-          element={
-            <AdminLayout>
-              <AutomationPage />
-            </AdminLayout>
-          }
-        />
-        <Route
-          path="/admin/agreement"
-          element={
-            <AdminLayout>
-              <AgreementPage />
-            </AdminLayout>
-          }
-        />
-        <Route
-          path="/admin/direct-message"
-          element={
-            <AdminLayout>
-              <DirectMessagePage />
-            </AdminLayout>
-          }
-        />
-        <Route
-          path="/admin/templates"
-          element={
-            <AdminLayout>
-              <EmailTemplatesPage />
-            </AdminLayout>
-          }
-        />
-        <Route
-          path="/admin/settings"
-          element={
-            <AdminLayout>
-              <SettingsPage />
-            </AdminLayout>
-          }
-        />
-        </Routes>
-      </AppLayout>
+            <Route path="/admin" element={<Navigate to="/" replace />} />
+            <Route path="/admin/dashboard" element={<Navigate to="/" replace />} />
+            <Route
+              path="/admin/campaigns"
+              element={
+                <AdminLayout>
+                  <CampaignsPage />
+                </AdminLayout>
+              }
+            />
+            <Route
+              path="/admin/automation"
+              element={
+                <AdminLayout>
+                  <AutomationPage />
+                </AdminLayout>
+              }
+            />
+            <Route
+              path="/admin/agreement"
+              element={
+                <AdminLayout>
+                  <AgreementPage />
+                </AdminLayout>
+              }
+            />
+            <Route
+              path="/admin/direct-message"
+              element={
+                <AdminLayout>
+                  <DirectMessagePage />
+                </AdminLayout>
+              }
+            />
+            <Route
+              path="/admin/templates"
+              element={
+                <AdminLayout>
+                  <EmailTemplatesPage />
+                </AdminLayout>
+              }
+            />
+            <Route
+              path="/admin/activity"
+              element={
+                <AdminLayout>
+                  <ActivityPage />
+                </AdminLayout>
+              }
+            />
+            <Route
+              path="/admin/settings"
+              element={
+                <AdminLayout>
+                  <SettingsPage />
+                </AdminLayout>
+              }
+            />
+          </Routes>
+        </AppLayout>
       </ProtectedRoute>
     </AuthProvider>
   )

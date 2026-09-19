@@ -243,6 +243,19 @@ describe('apiClient & ApiError', () => {
       })
     })
 
+    it('6b. Aborted requests re-throw AbortError directly instead of wrapping as network error', async () => {
+      const abortError = new DOMException('The user aborted a request.', 'AbortError')
+      const mockFetch = vi.fn().mockRejectedValue(abortError)
+      globalThis.fetch = mockFetch
+
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(
+        apiClient.get('/api/v1/templates', { signal: controller.signal })
+      ).rejects.toThrow('The user aborted a request.')
+    })
+
     it('7. No request contains the token in the URL or query params', async () => {
       const mockFetch = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ status: 'ok' }), {
