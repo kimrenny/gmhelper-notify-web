@@ -8,6 +8,7 @@ import type { AutomationRule, AutomationRuleConfig, EmailTemplate } from '../typ
 
 const sampleConfig1: AutomationRuleConfig = {
   version: 1,
+  trigger: 'user.registered',
   schedule: {
     type: 'daily',
     hourUtc: 3,
@@ -61,6 +62,7 @@ const sampleConfig1: AutomationRuleConfig = {
 
 const sampleConfig2: AutomationRuleConfig = {
   version: 1,
+  trigger: 'user.inactive',
   schedule: {
     type: 'weekly',
     dayOfWeek: 1,
@@ -199,6 +201,10 @@ describe('AutomationPage component with Rule Builder', () => {
     expect(screen.queryByText(/Loading automation rules.../i)).toBeNull()
     expect(screen.getByTestId('status-badge-rule-1').textContent).toBe('Enabled')
     expect(screen.getByTestId('status-badge-rule-2').textContent).toBe('Disabled')
+
+    // Verify trigger badge
+    expect(screen.getByTestId('trigger-badge-rule-1').textContent).toBe('user.registered')
+    expect(screen.getByTestId('trigger-badge-rule-2').textContent).toBe('user.inactive')
 
     // Verify schedule summary
     expect(screen.getByTestId('schedule-summary-rule-1').textContent).toBe('Daily at 03:00 UTC')
@@ -436,6 +442,7 @@ describe('AutomationPage component with Rule Builder', () => {
       enabled: true,
       config: {
         version: 1,
+        trigger: 'user.registered',
         schedule: {
           type: 'daily',
           hourUtc: 5,
@@ -977,5 +984,212 @@ describe('AutomationPage component with Rule Builder', () => {
       { field: 'lastActivityAt', operator: 'older_than', value: 30, unit: 'days' },
     ])
   })
+
+  it('13. Supports explicit trigger selection between event triggers and time-based triggers in Rule Builder', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/automation/rules') && options?.method === 'POST') {
+        const payload = JSON.parse(options.body as string)
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: 'rule-trigger-test', ...payload }), {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url.includes('/api/v1/automation/rules')) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }))
+      }
+      return Promise.reject(new Error('Unknown URL'))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<AutomationPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-rule-btn')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('create-rule-btn'))
+    })
+
+    const triggerSelect = screen.getByTestId('rule-trigger-select') as HTMLSelectElement
+    expect(triggerSelect).toBeDefined()
+    expect(triggerSelect.value).toBe('user.registered')
+
+    // Verify trigger select options contain both event triggers and inactivity trigger
+    expect(triggerSelect.textContent).toContain('User registered')
+    expect(triggerSelect.textContent).toContain('Password changed')
+    expect(triggerSelect.textContent).toContain('Email confirmed')
+    expect(triggerSelect.textContent).toContain('User blocked')
+    expect(triggerSelect.textContent).toContain('User unblocked')
+    expect(triggerSelect.textContent).toContain('User language changed')
+    expect(triggerSelect.textContent).toContain('User inactive')
+
+    // Select password.changed trigger
+    await act(async () => {
+      fireEvent.change(screen.getByTestId('rule-name-input'), { target: { value: 'Password Change Alert' } })
+      fireEvent.change(screen.getByTestId('rule-template-select'), { target: { value: 'tpl-2' } })
+      fireEvent.change(triggerSelect, { target: { value: 'password.changed' } })
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('submit-rule-btn'))
+    })
+
+    const postCall = mockFetch.mock.calls.find(
+      (call) => call[0].includes('/api/v1/automation/rules') && call[1]?.method === 'POST'
+    )
+    expect(postCall).toBeDefined()
+    const requestBody = JSON.parse(postCall![1].body as string)
+    expect(requestBody.config.trigger).toBe('password.changed')
+  })
+
+  it('renders "Missing trigger" warning badge when rule config lacks trigger, and requires trigger selection on edit', async () => {
+    setAuthMock()
+
+    const ruleWithoutTrigger: AutomationRule = {
+      id: 'rule-legacy-1',
+      name: 'Legacy Untriggered Rule',
+      templateId: 'tpl-1',
+      enabled: true,
+      config: {
+        version: 1,
+        schedule: { type: 'daily', hourUtc: 4, minuteUtc: 0 },
+        conditions: { operator: 'all', conditions: [] },
+        action: { type: 'send_email' },
+      } as unknown as AutomationRuleConfig,
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify([
+              {
+                id: 'tpl-1',
+                name: 'Welcome Email',
+                templateKey: 'welcome_email',
+                type: 'automation',
+                version: 1,
+                isActive: true,
+                createdAt: '2026-01-01T00:00:00Z',
+                updatedAt: '2026-01-01T00:00:00Z',
+              },
+            ]),
+            { status: 200 }
+          )
+        )
+      }
+      if (url.includes('/api/v1/automation/rules/rule-legacy-1')) {
+        return Promise.resolve(new Response(JSON.stringify(ruleWithoutTrigger), { status: 200 }))
+      }
+      if (url.includes('/api/v1/automation/rules')) {
+        return Promise.resolve(new Response(JSON.stringify([ruleWithoutTrigger]), { status: 200 }))
+      }
+      return Promise.reject(new Error('Unknown URL'))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<AutomationPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('trigger-badge-rule-legacy-1')).toBeDefined()
+    })
+
+    const badge = screen.getByTestId('trigger-badge-rule-legacy-1')
+    expect(badge.textContent).toBe('Missing trigger')
+
+    // Click edit
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('edit-rule-btn-rule-legacy-1'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('rule-trigger-select')).toBeDefined()
+    })
+
+    const triggerSelect = screen.getByTestId('rule-trigger-select') as HTMLSelectElement
+    // Must NOT silently default to user.registered
+    expect(triggerSelect.value).toBe('')
+
+    // Attempting to submit without selecting a trigger should fail validation
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('submit-rule-btn'))
+    })
+
+    expect(screen.getByTestId('rule-trigger-error').textContent).toBe('Please select a trigger')
+  })
+
+  it('24. Opens Execution History drawer when History action button is clicked', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/automation/rules/rule-1/executions')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              items: [
+                {
+                  id: 'exec-101',
+                  ruleId: 'rule-1',
+                  eventId: 'evt-500',
+                  recipientEmail: 'user@example.com',
+                  externalUserId: 'usr-44',
+                  notificationId: 'notif-77',
+                  status: 'success',
+                  executedAt: '2026-09-20T10:00:00Z',
+                  createdAt: '2026-09-20T10:00:00Z',
+                },
+              ],
+              total: 1,
+              limit: 20,
+              offset: 0,
+            }),
+            { status: 200 }
+          )
+        )
+      }
+      if (url.includes('/api/v1/automation/rules')) {
+        return Promise.resolve(new Response(JSON.stringify(mockRules), { status: 200 }))
+      }
+      return Promise.reject(new Error('Unknown URL: ' + url))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<AutomationPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('history-rule-btn-rule-1')).toBeDefined()
+    })
+
+    // Click History button
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('history-rule-btn-rule-1'))
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId('execution-history-drawer')).toBeDefined()
+      expect(screen.getByTestId('execution-row-exec-101')).toBeDefined()
+      expect(screen.getByText('user@example.com')).toBeDefined()
+      expect(screen.getByTestId('execution-status-exec-101').textContent).toBe('Success')
+    })
+
+    // Close drawer
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('execution-history-close-btn'))
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('execution-history-drawer')).toBeNull()
+    })
+  })
 })
+
 

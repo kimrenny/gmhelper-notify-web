@@ -124,6 +124,32 @@ export interface ConditionGroup {
   conditions: ConditionNode[]
 }
 
+// Supported Trigger Types
+export type EventTriggerType =
+  | 'user.registered'
+  | 'email.confirmed'
+  | 'password.changed'
+  | 'user.blocked'
+  | 'user.unblocked'
+  | 'user.language_changed'
+
+export type ScheduledTriggerType = 'user.inactive'
+
+export type TriggerType = EventTriggerType | ScheduledTriggerType
+
+export const EVENT_TRIGGER_OPTIONS: Array<{ value: EventTriggerType; label: string }> = [
+  { value: 'user.registered', label: 'User registered (user.registered)' },
+  { value: 'email.confirmed', label: 'Email confirmed (email.confirmed)' },
+  { value: 'password.changed', label: 'Password changed (password.changed)' },
+  { value: 'user.blocked', label: 'User blocked (user.blocked)' },
+  { value: 'user.unblocked', label: 'User unblocked (user.unblocked)' },
+  { value: 'user.language_changed', label: 'User language changed (user.language_changed)' },
+]
+
+export const SCHEDULED_TRIGGER_OPTIONS: Array<{ value: ScheduledTriggerType; label: string }> = [
+  { value: 'user.inactive', label: 'User inactive (user.inactive)' },
+]
+
 // Action Configuration (templateId is kept outside config as rule-level property)
 export type ActionType = 'send_email'
 
@@ -135,6 +161,7 @@ export interface ActionConfig {
 // Root Versioned Configuration AST
 export interface AutomationRuleConfig {
   version: number
+  trigger: TriggerType
   schedule: ScheduleConfig
   conditions: ConditionGroup
   action: ActionConfig
@@ -167,3 +194,28 @@ export interface UpdateAutomationRuleInput {
   enabled?: boolean
   config?: AutomationRuleConfig
 }
+
+export interface AutomationExecution {
+  id: string
+  ruleId: string
+  eventId: string
+  recipientEmail: string
+  externalUserId?: string | null
+  notificationId?: string | null
+  status: string
+  executedAt: string
+  createdAt: string
+}
+
+export interface AutomationExecutionListResponse {
+  items: AutomationExecution[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface GetAutomationExecutionsParams {
+  limit?: number
+  offset?: number
+}
+

@@ -1,6 +1,11 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { AutomationExecutionHistoryDrawer } from '../components'
 import { useApiClient } from '../hooks/useApiClient'
 import { ApiError, automationService, templateService } from '../services'
+import {
+  EVENT_TRIGGER_OPTIONS,
+  SCHEDULED_TRIGGER_OPTIONS,
+} from '../types'
 import type {
   ActionConfig,
   AutomationRule,
@@ -15,6 +20,7 @@ import type {
   EmailTemplate,
   ScheduleConfig,
   ScheduleType,
+  TriggerType,
 } from '../types'
 import { filterTemplatesByType } from '../utils'
 
@@ -27,6 +33,7 @@ interface RuleFormState {
   name: string
   templateId: string
   enabled: boolean
+  trigger: TriggerType | ''
   scheduleType: ScheduleType
   scheduleHourUtc: number
   scheduleMinuteUtc: number
@@ -61,6 +68,33 @@ function isConditionGroup(node: ConditionNode): node is ConditionGroup {
   return 'operator' in node && 'conditions' in node
 }
 
+function isKnownTrigger(trigger?: string): trigger is TriggerType {
+  if (!trigger) return false
+  return (
+    EVENT_TRIGGER_OPTIONS.some((o) => o.value === trigger) ||
+    SCHEDULED_TRIGGER_OPTIONS.some((o) => o.value === trigger)
+  )
+}
+
+function getTriggerBadgeStyle(trigger?: string) {
+  if (!trigger || !isKnownTrigger(trigger)) {
+    return {
+      background: 'rgba(239, 68, 68, 0.15)',
+      color: '#f87171',
+    }
+  }
+  if (trigger === 'user.inactive') {
+    return {
+      background: 'rgba(234, 179, 8, 0.15)',
+      color: '#fde047',
+    }
+  }
+  return {
+    background: 'rgba(34, 197, 94, 0.15)',
+    color: '#4ade80',
+  }
+}
+
 function createDefaultConditionItem(field: ConditionField = 'isActive'): ConditionItem {
   switch (field) {
     case 'isBlocked':
@@ -82,6 +116,7 @@ const initialFormState: RuleFormState = {
   name: '',
   templateId: '',
   enabled: true,
+  trigger: 'user.registered',
   scheduleType: 'daily',
   scheduleHourUtc: 3,
   scheduleMinuteUtc: 0,
@@ -184,6 +219,8 @@ function updateGroupAtPath(
 
 function ruleToFormState(rule: AutomationRule): RuleFormState {
   const cfg = rule.config
+  const trigger: TriggerType | '' =
+    cfg?.trigger && isKnownTrigger(cfg.trigger) ? cfg.trigger : ''
   const sched = cfg?.schedule
   const scheduleType: ScheduleType = sched?.type || 'daily'
   const scheduleHourUtc = sched && 'hourUtc' in sched ? sched.hourUtc : 3
@@ -200,6 +237,7 @@ function ruleToFormState(rule: AutomationRule): RuleFormState {
     name: rule.name || '',
     templateId: rule.templateId || '',
     enabled: rule.enabled ?? true,
+    trigger,
     scheduleType,
     scheduleHourUtc,
     scheduleMinuteUtc,
@@ -290,6 +328,9 @@ function AutomationPage() {
 
   // Quick Toggle State
   const [togglingRuleId, setTogglingRuleId] = useState<string | null>(null)
+
+  // Execution History Drawer State
+  const [historyRule, setHistoryRule] = useState<AutomationRule | null>(null)
 
   const loadRules = useCallback(
     async (signal?: AbortSignal) => {
@@ -473,6 +514,10 @@ function AutomationPage() {
       errors.templateId = 'Please select an email template'
     }
 
+    if (!formData.trigger) {
+      errors.trigger = 'Please select a trigger'
+    }
+
     // Schedule validation
     if (formData.scheduleType === 'daily' || formData.scheduleType === 'weekly') {
       if (formData.scheduleHourUtc < 0 || formData.scheduleHourUtc > 23 || isNaN(formData.scheduleHourUtc)) {
@@ -547,6 +592,7 @@ function AutomationPage() {
 
     const config: AutomationRuleConfig = {
       version: 1,
+      trigger: formData.trigger as TriggerType,
       schedule,
       conditions: formData.conditions,
       action,
@@ -1223,8 +1269,8 @@ function AutomationPage() {
             noValidate
             style={{ display: 'grid', gap: '1.5rem', marginTop: '1rem' }}
           >
-            {/* 1. Basic Fields */}
-            <div className="gm-admin-grid gm-admin-grid--2">
+            {/* 1. Basic Fields & Trigger */}
+            <div className="gm-admin-grid gm-admin-grid--3">
               <div>
                 <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
                   Rule name <span style={{ color: '#f87171' }}>*</span>
@@ -1250,6 +1296,51 @@ function AutomationPage() {
                 {formValidationErrors.name && (
                   <span data-testid="rule-name-error" style={{ color: '#f87171', fontSize: '0.85rem', display: 'block', marginTop: '0.25rem' }}>
                     {formValidationErrors.name}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.9rem', marginBottom: '0.35rem' }}>
+                  Trigger <span style={{ color: '#f87171' }}>*</span>
+                </label>
+                <select
+                  name="trigger"
+                  className="gm-admin-select"
+                  value={formData.trigger}
+                  onChange={(e) => {
+                    const trig = e.target.value as TriggerType | ''
+                    setFormData((prev) => ({ ...prev, trigger: trig }))
+                    if (formValidationErrors.trigger) {
+                      setFormValidationErrors((prev) => {
+                        const next = { ...prev }
+                        delete next.trigger
+                        return next
+                      })
+                    }
+                  }}
+                  disabled={isSubmitting || isLoadingRule}
+                  data-testid="rule-trigger-select"
+                >
+                  {!formData.trigger && <option value="">Select a trigger</option>}
+                  <optgroup label="Event Triggers">
+                    {EVENT_TRIGGER_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Time-based / Inactivity Triggers">
+                    {SCHEDULED_TRIGGER_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                </select>
+                {formValidationErrors.trigger && (
+                  <span data-testid="rule-trigger-error" style={{ color: '#f87171', fontSize: '0.85rem', display: 'block', marginTop: '0.25rem' }}>
+                    {formValidationErrors.trigger}
                   </span>
                 )}
               </div>
@@ -1597,6 +1688,7 @@ function AutomationPage() {
             <thead>
               <tr>
                 <th>Rule Name</th>
+                <th>Trigger</th>
                 <th>Schedule</th>
                 <th>Conditions</th>
                 <th>Linked Template</th>
@@ -1615,6 +1707,21 @@ function AutomationPage() {
                       <div data-testid={`rule-name-${rule.id}`} style={{ fontWeight: 600 }}>
                         {rule.name}
                       </div>
+                    </td>
+                    <td>
+                      <span
+                        data-testid={`trigger-badge-${rule.id}`}
+                        style={{
+                          display: 'inline-block',
+                          padding: '0.2rem 0.55rem',
+                          borderRadius: '4px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          ...getTriggerBadgeStyle(rule.config?.trigger),
+                        }}
+                      >
+                        {rule.config?.trigger || 'Missing trigger'}
+                      </span>
                     </td>
                     <td>
                       <span
@@ -1694,6 +1801,15 @@ function AutomationPage() {
                         <button
                           type="button"
                           className="gm-admin-btn"
+                          onClick={() => setHistoryRule(rule)}
+                          disabled={isSubmitting || isLoadingRule || isDeleting || togglingRuleId === rule.id}
+                          data-testid={`history-rule-btn-${rule.id}`}
+                        >
+                          History
+                        </button>
+                        <button
+                          type="button"
+                          className="gm-admin-btn"
                           onClick={() => void openEditForm(rule)}
                           disabled={isSubmitting || isLoadingRule || isDeleting || togglingRuleId === rule.id}
                           data-testid={`edit-rule-btn-${rule.id}`}
@@ -1736,8 +1852,15 @@ function AutomationPage() {
           </table>
         </div>
       ) : null}
+
+      {/* Execution History Drawer */}
+      <AutomationExecutionHistoryDrawer
+        rule={historyRule}
+        onClose={() => setHistoryRule(null)}
+      />
     </section>
   )
 }
 
 export default AutomationPage
+

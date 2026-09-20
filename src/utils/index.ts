@@ -4,3 +4,5 @@ export const formatAppName = (name: string) =>
 export * from './directMessage'
 export * from './template'
 export * from './activity'
+export * from './automation'
+
