@@ -33,6 +33,7 @@ export type ConditionField =
   | 'role'
   | 'username'
   | 'registrationDate'
+  | 'lastActivityAt'
 
 // Condition Operators
 export type BooleanConditionOperator = 'equals' | 'not_equals'
@@ -91,14 +92,14 @@ export interface TextExistenceConditionItem {
 }
 
 export interface DateRelativeConditionItem {
-  field: 'registrationDate'
+  field: 'registrationDate' | 'lastActivityAt'
   operator: 'older_than' | 'newer_than'
   value: number
   unit: DateRelativeUnit
 }
 
 export interface DateAbsoluteConditionItem {
-  field: 'registrationDate'
+  field: 'registrationDate' | 'lastActivityAt'
   operator: 'before' | 'after'
   value: string
   unit?: never

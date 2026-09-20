@@ -7,4 +7,6 @@ export interface UserSearchResult {
   isActive: boolean
   isBlocked: boolean
   registrationDate: string
+  lastActivityAt?: string | null
 }
+

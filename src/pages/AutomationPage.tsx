@@ -44,6 +44,7 @@ const FIELD_OPTIONS: Array<{ value: ConditionField; label: string }> = [
   { value: 'language', label: 'Language (language)' },
   { value: 'role', label: 'User role (role)' },
   { value: 'registrationDate', label: 'Registration date (registrationDate)' },
+  { value: 'lastActivityAt', label: 'Last activity (lastActivityAt)' },
 ]
 
 const DAYS_OF_WEEK = [
@@ -72,6 +73,7 @@ function createDefaultConditionItem(field: ConditionField = 'isActive'): Conditi
     case 'username':
       return { field, operator: 'exists' }
     case 'registrationDate':
+    case 'lastActivityAt':
       return { field, operator: 'older_than', value: 30, unit: 'days' }
   }
 }
@@ -245,10 +247,10 @@ function validateConditionsTree(group: ConditionGroup): string | null {
             return `Please enter a value for "${field}".`
           }
         }
-      } else if (field === 'registrationDate') {
+      } else if (field === 'registrationDate' || field === 'lastActivityAt') {
         if (operator === 'older_than' || operator === 'newer_than') {
           if (typeof value !== 'number' || isNaN(value) || value <= 0) {
-            return 'Registration date relative duration must be a positive number.'
+            return `${field === 'lastActivityAt' ? 'Last activity' : 'Registration date'} relative duration must be a positive number.`
           }
           const unit = item.unit as string | undefined
           if (!unit || !['days', 'months', 'years'].includes(unit)) {
@@ -836,7 +838,7 @@ function AutomationPage() {
             value: scalarVal,
           })
         }
-      } else if (item.field === 'registrationDate') {
+      } else if (item.field === 'registrationDate' || item.field === 'lastActivityAt') {
         if (newOp === 'older_than' || newOp === 'newer_than') {
           handleUpdateConditionItem(groupPath, itemIndex, {
             field: item.field,
@@ -916,7 +918,7 @@ function AutomationPage() {
               <option value="in">in list</option>
               <option value="not_in">not in list</option>
             </>
-          ) : item.field === 'registrationDate' ? (
+          ) : item.field === 'registrationDate' || item.field === 'lastActivityAt' ? (
             <>
               <option value="older_than">older than</option>
               <option value="newer_than">newer than</option>
@@ -1004,7 +1006,7 @@ function AutomationPage() {
               data-testid={`condition-value-scalar-${pathKey}`}
             />
           )
-        ) : item.field === 'registrationDate' ? (
+        ) : item.field === 'registrationDate' || item.field === 'lastActivityAt' ? (
           item.operator === 'older_than' || item.operator === 'newer_than' ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
               <input

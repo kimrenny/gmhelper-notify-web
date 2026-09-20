@@ -918,4 +918,64 @@ describe('AutomationPage component with Rule Builder', () => {
     expect(select.textContent).not.toContain('Excluded Campaign Template')
     expect(select.textContent).not.toContain('Excluded Agreement Template')
   })
+
+  it('12. Supports lastActivityAt inactivity condition creation', async () => {
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(new Response(JSON.stringify(mockTemplates), { status: 200 }))
+      }
+      if (url.includes('/api/v1/automation/rules') && options?.method === 'POST') {
+        const payload = JSON.parse(options.body as string)
+        return Promise.resolve(
+          new Response(JSON.stringify({ id: 'rule-inactivity-1', ...payload }), {
+            status: 201,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url.includes('/api/v1/automation/rules')) {
+        return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }))
+      }
+      return Promise.reject(new Error('Unknown URL'))
+    })
+    globalThis.fetch = mockFetch
+
+    render(<AutomationPage />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('create-rule-btn')).toBeDefined()
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('create-rule-btn'))
+    })
+
+    await act(async () => {
+      fireEvent.change(screen.getByTestId('rule-name-input'), { target: { value: 'Inactivity Re-engagement' } })
+      fireEvent.change(screen.getByTestId('rule-template-select'), { target: { value: 'tpl-1' } })
+      fireEvent.change(screen.getByTestId('condition-field-select-root-0'), { target: { value: 'lastActivityAt' } })
+    })
+
+    expect(screen.getByTestId('condition-value-relative-number-root-0')).toBeDefined()
+    expect(screen.getByTestId('condition-value-relative-unit-root-0')).toBeDefined()
+
+    await act(async () => {
+      fireEvent.change(screen.getByTestId('condition-value-relative-number-root-0'), { target: { value: '30' } })
+      fireEvent.change(screen.getByTestId('condition-value-relative-unit-root-0'), { target: { value: 'days' } })
+    })
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('submit-rule-btn'))
+    })
+
+    const postCall = mockFetch.mock.calls.find(
+      (call) => call[0].includes('/api/v1/automation/rules') && call[1]?.method === 'POST'
+    )
+    expect(postCall).toBeDefined()
+    const requestBody = JSON.parse(postCall![1].body as string)
+    expect(requestBody.config.conditions.conditions).toEqual([
+      { field: 'lastActivityAt', operator: 'older_than', value: 30, unit: 'days' },
+    ])
+  })
 })
+
