@@ -1,10 +1,13 @@
 import { apiClient } from './apiClient'
 import type { ApiClient } from '../types/api'
 import type {
+  AutomationExecutionListResponse,
   AutomationRule,
   CreateAutomationRuleInput,
+  GetAutomationExecutionsParams,
   UpdateAutomationRuleInput,
 } from '../types/automation'
+
 
 export type {
   ScheduleType,
@@ -36,6 +39,9 @@ export type {
   AutomationRule,
   CreateAutomationRuleInput,
   UpdateAutomationRuleInput,
+  AutomationExecution,
+  AutomationExecutionListResponse,
+  GetAutomationExecutionsParams,
 } from '../types/automation'
 
 export interface AutomationService {
@@ -44,6 +50,12 @@ export interface AutomationService {
   createRule(data: CreateAutomationRuleInput, client?: ApiClient, signal?: AbortSignal): Promise<AutomationRule>
   updateRule(id: string, data: UpdateAutomationRuleInput, client?: ApiClient, signal?: AbortSignal): Promise<AutomationRule>
   deleteRule(id: string, client?: ApiClient, signal?: AbortSignal): Promise<void>
+  getRuleExecutions(
+    ruleId: string,
+    params?: GetAutomationExecutionsParams,
+    client?: ApiClient,
+    signal?: AbortSignal
+  ): Promise<AutomationExecutionListResponse>
 }
 
 export const automationService: AutomationService = {
@@ -75,4 +87,26 @@ export const automationService: AutomationService = {
   async deleteRule(id: string, client: ApiClient = apiClient, signal?: AbortSignal): Promise<void> {
     return client.delete<void>(`/api/v1/automation/rules/${encodeURIComponent(id)}`, { signal })
   },
+
+  async getRuleExecutions(
+    ruleId: string,
+    params?: GetAutomationExecutionsParams,
+    client: ApiClient = apiClient,
+    signal?: AbortSignal
+  ): Promise<AutomationExecutionListResponse> {
+    const queryParams: Record<string, string | number | boolean | undefined | null> = {}
+    if (params) {
+      if (typeof params.limit === 'number') {
+        queryParams.limit = params.limit
+      }
+      if (typeof params.offset === 'number') {
+        queryParams.offset = params.offset
+      }
+    }
+    return client.get<AutomationExecutionListResponse>(
+      `/api/v1/automation/rules/${encodeURIComponent(ruleId)}/executions`,
+      { params: queryParams, signal }
+    )
+  },
 }
+

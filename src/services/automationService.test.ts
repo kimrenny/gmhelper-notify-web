@@ -16,6 +16,7 @@ describe('automationService', () => {
 
   const sampleConfig: AutomationRuleConfig = {
     version: 1,
+    trigger: 'user.registered',
     schedule: {
       type: 'daily',
       hourUtc: 3,
@@ -86,6 +87,7 @@ describe('automationService', () => {
       enabled: false,
       config: {
         version: 1,
+        trigger: 'user.inactive',
         schedule: {
           type: 'weekly',
           hourUtc: 10,
@@ -202,6 +204,7 @@ describe('automationService', () => {
       enabled: true,
       config: {
         version: 1,
+        trigger: 'user.registered',
         schedule: {
           type: 'daily',
           hourUtc: 3,
@@ -238,6 +241,7 @@ describe('automationService', () => {
   it('updateRule sends PUT to /api/v1/automation/rules/{id} with updated config', async () => {
     const updatedConfig: AutomationRuleConfig = {
       version: 1,
+      trigger: 'password.changed',
       schedule: {
         type: 'interval_hours',
         intervalHours: 48,
@@ -429,6 +433,44 @@ describe('automationService', () => {
     })
   })
 
+  it('getRuleExecutions sends GET to /api/v1/automation/rules/{id}/executions with query params', async () => {
+    const mockResponse = {
+      items: [
+        {
+          id: 'exec-1',
+          ruleId: 'rule-1',
+          eventId: 'evt-1',
+          recipientEmail: 'user@example.com',
+          externalUserId: 'usr-1',
+          notificationId: 'notif-1',
+          status: 'success',
+          executedAt: '2026-09-20T12:00:00Z',
+          createdAt: '2026-09-20T12:00:00Z',
+        },
+      ],
+      total: 1,
+      limit: 20,
+      offset: 0,
+    }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    const client = createApiClient('token-hist')
+    const result = await automationService.getRuleExecutions('rule-1', { limit: 20, offset: 0 }, client)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0]
+    expect(calledUrl).toContain('/api/v1/automation/rules/rule-1/executions?limit=20&offset=0')
+    expect(calledOptions.method).toBe('GET')
+    expect(result).toEqual(mockResponse)
+  })
+
   it('propagates network failure as ApiError with isNetworkError flag', async () => {
     const mockFetch = vi.fn().mockRejectedValue(new Error('Network disconnected'))
     globalThis.fetch = mockFetch
@@ -441,3 +483,4 @@ describe('automationService', () => {
     })
   })
 })
+
