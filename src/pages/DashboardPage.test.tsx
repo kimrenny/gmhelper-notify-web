@@ -346,4 +346,55 @@ describe('DashboardPage component', () => {
     expect(rateCard.textContent).toContain('0.0%')
     expect(rateCard.textContent).not.toContain('NaN')
   })
+
+  it('11. Displays 403 forbidden error state cleanly', async () => {
+    vi.spyOn(dashboardService, 'getStats').mockRejectedValue(
+      new ApiError('Forbidden', 403)
+    )
+
+    renderDashboard()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-error-alert')).toBeTruthy()
+    })
+
+    expect(screen.getByTestId('error-title').textContent).toContain('Forbidden (403)')
+    expect(screen.getByTestId('error-message').textContent).toContain('You do not have permission to access dashboard statistics.')
+    expect(screen.queryByTestId('dashboard-summary-cards')).toBeNull()
+  })
+
+  it('12. Displays network connection error state cleanly', async () => {
+    vi.spyOn(dashboardService, 'getStats').mockRejectedValue(
+      new Error('Failed to fetch')
+    )
+
+    renderDashboard()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-error-alert')).toBeTruthy()
+    })
+
+    expect(screen.getByTestId('error-title').textContent).toContain('Connection Error')
+    expect(screen.getByTestId('error-message').textContent).toContain('Failed to fetch')
+    expect(screen.queryByTestId('dashboard-summary-cards')).toBeNull()
+  })
+
+  it('13. Proves no mock or fallback data is rendered when the backend API fails', async () => {
+    vi.spyOn(dashboardService, 'getStats').mockRejectedValue(
+      new ApiError('Internal Server Error', 500)
+    )
+
+    renderDashboard()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('dashboard-error-alert')).toBeTruthy()
+    })
+
+    // Assert that no cards, tables, or synthetic counters are visible
+    expect(screen.queryByTestId('dashboard-summary-cards')).toBeNull()
+    expect(screen.queryByTestId('campaign-status-card')).toBeNull()
+    expect(screen.queryByTestId('recent-campaigns-card')).toBeNull()
+    expect(screen.queryByTestId('recent-campaigns-table')).toBeNull()
+  })
 })
+
