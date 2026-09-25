@@ -742,4 +742,123 @@ describe('DirectMessagePage - Complete Workflow', () => {
     expect(select.textContent).not.toContain('Agreement Excluded Template')
     expect(select.textContent).not.toContain('Automation Excluded Template')
   })
+
+  it('displays search error when user search fails', async () => {
+    vi.spyOn(userService, 'searchUsers').mockRejectedValue(new Error('Network error searching users'))
+
+    render(<DirectMessagePage />)
+
+    const searchInput = screen.getByRole('textbox', { name: /search users/i })
+    fireEvent.change(searchInput, { target: { value: 'errortest' } })
+
+    await waitFor(
+      () => {
+        expect(screen.getByText('Network error searching users')).toBeDefined()
+      },
+      { timeout: 1500 }
+    )
+  })
+
+  it('displays "No users found" when user search returns empty array', async () => {
+    vi.spyOn(userService, 'searchUsers').mockResolvedValue([])
+
+    render(<DirectMessagePage />)
+
+    const searchInput = screen.getByRole('textbox', { name: /search users/i })
+    fireEvent.change(searchInput, { target: { value: 'nonexistent' } })
+
+    await waitFor(
+      () => {
+        expect(screen.getByText(/No users found matching/i)).toBeDefined()
+      },
+      { timeout: 1500 }
+    )
+  })
+
+  it('handles 401 and 403 authorization failures on notification creation', async () => {
+    vi.spyOn(directService, 'createNotification').mockRejectedValue(
+      new ApiError('Forbidden: Insufficient permissions', 403, 'FORBIDDEN')
+    )
+
+    render(<DirectMessagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /email template/i })).toBeDefined()
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: /email template/i }), {
+      target: { value: 'tpl-no-vars' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /custom email/i }))
+    fireEvent.change(screen.getByLabelText(/recipient email \*/i), {
+      target: { value: 'forbidden@example.com' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /send direct message/i }))
+    fireEvent.click(screen.getByRole('button', { name: /confirm & send/i }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('submit-error-banner')).toBeDefined()
+      expect(screen.getByText('Forbidden: Insufficient permissions')).toBeDefined()
+    })
+  })
+
+  it('prevents duplicate submissions when confirmation button is clicked while in-flight', async () => {
+    let resolveCreate: (val: DirectNotification) => void
+    const createPromise = new Promise<DirectNotification>((resolve) => {
+      resolveCreate = resolve
+    })
+
+    const createSpy = vi.spyOn(directService, 'createNotification').mockReturnValue(createPromise)
+    const deliverSpy = vi.spyOn(directService, 'deliverNotification').mockResolvedValue({
+      id: 'notif-dup-1',
+      templateId: 'tpl-no-vars',
+      recipientEmail: 'dup@example.com',
+      notificationType: 'direct',
+      deliveryStatus: 'sent',
+      attemptsCount: 1,
+      createdAt: '2026-09-17T12:00:00Z',
+      updatedAt: '2026-09-17T12:00:01Z',
+    })
+
+    render(<DirectMessagePage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('combobox', { name: /email template/i })).toBeDefined()
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: /email template/i }), {
+      target: { value: 'tpl-no-vars' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /custom email/i }))
+    fireEvent.change(screen.getByLabelText(/recipient email \*/i), {
+      target: { value: 'dup@example.com' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /send direct message/i }))
+
+    const confirmBtn = screen.getByRole('button', { name: /confirm & send/i })
+    fireEvent.click(confirmBtn)
+    fireEvent.click(confirmBtn) // duplicate click
+
+    expect(createSpy).toHaveBeenCalledTimes(1)
+
+    // Complete creation
+    resolveCreate!({
+      id: 'notif-dup-1',
+      templateId: 'tpl-no-vars',
+      recipientEmail: 'dup@example.com',
+      notificationType: 'direct',
+      deliveryStatus: 'pending',
+      attemptsCount: 0,
+      createdAt: '2026-09-17T12:00:00Z',
+      updatedAt: '2026-09-17T12:00:00Z',
+    })
+
+    await waitFor(() => {
+      expect(deliverSpy).toHaveBeenCalledTimes(1)
+      expect(screen.getByTestId('delivery-success-banner')).toBeDefined()
+    })
+  })
 })
+
