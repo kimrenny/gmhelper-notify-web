@@ -19,6 +19,7 @@ const links: NavItem[] = [
   { to: '/admin/automation', label: 'Automation' },
   { to: '/admin/agreement', label: 'Agreement' },
   { to: '/admin/direct-message', label: 'Direct message' },
+  { to: '/admin/transactional-emails', label: 'Transactional emails' },
   { to: '/admin/templates', label: 'Templates' },
   { to: '/admin/activity', label: 'Activity history', ownerOnly: true },
   { to: '/admin/settings', label: 'Settings' },
