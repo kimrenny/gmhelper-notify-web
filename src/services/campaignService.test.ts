@@ -210,6 +210,86 @@ describe('campaignService', () => {
     expect(result).toEqual(cancelledResponse)
   })
 
+  it('createCampaign sends POST with audienceFilter payload', async () => {
+    const input: CreateCampaignInput = {
+      name: 'Targeted Campaign',
+      templateId: 'tpl-99',
+      campaignType: 'broadcast',
+      status: 'draft',
+      audienceFilter: {
+        role: 'admin',
+        language: 'tr',
+        registrationDate: 'last_30_days',
+        emailConfirmed: 'confirmed',
+        accountStatus: 'active',
+      },
+    }
+
+    const createdResponse: Campaign = {
+      id: 'camp-targeted',
+      name: input.name,
+      templateId: input.templateId,
+      campaignType: input.campaignType,
+      status: input.status ?? 'draft',
+      audienceFilter: input.audienceFilter,
+      createdAt: '2026-09-14T12:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(createdResponse), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    const client = createApiClient('token-create')
+    const result = await campaignService.createCampaign(input, client)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0]
+    expect(calledUrl).toContain('/api/v1/campaigns')
+    expect(calledOptions.method).toBe('POST')
+    expect(calledOptions.body).toBe(JSON.stringify(input))
+    expect(result).toEqual(createdResponse)
+  })
+
+  it('updateCampaign sends PUT with audienceFilter payload', async () => {
+    const input: UpdateCampaignInput = {
+      name: 'Updated Promo With Filters',
+      audienceFilter: {
+        role: 'user',
+        language: 'en',
+      },
+    }
+
+    const updatedResponse: Campaign = {
+      id: 'camp-123',
+      name: 'Updated Promo With Filters',
+      status: 'draft',
+      audienceFilter: input.audienceFilter,
+      createdAt: '2026-09-14T00:00:00Z',
+    }
+
+    const mockFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(updatedResponse), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    globalThis.fetch = mockFetch
+
+    const client = createApiClient('token-update')
+    const result = await campaignService.updateCampaign('camp-123', input, client)
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
+    const [calledUrl, calledOptions] = mockFetch.mock.calls[0]
+    expect(calledUrl).toContain('/api/v1/campaigns/camp-123')
+    expect(calledOptions.method).toBe('PUT')
+    expect(calledOptions.body).toBe(JSON.stringify(input))
+    expect(result).toEqual(updatedResponse)
+  })
+
   it('passes AbortSignal to the underlying fetch call', async () => {
     const controller = new AbortController()
     const mockFetch = vi.fn().mockResolvedValue(

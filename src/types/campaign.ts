@@ -8,12 +8,21 @@ export type CampaignStatus =
   | 'cancelled'
   | string
 
+export interface CampaignAudienceFilter {
+  role?: string
+  registrationDate?: string
+  emailConfirmed?: string
+  language?: string
+  accountStatus?: string
+}
+
 export interface Campaign {
   id: string
   name: string
   templateId?: string
   campaignType?: string
   status: CampaignStatus
+  audienceFilter?: CampaignAudienceFilter
   scheduledAt?: string
   startedAt?: string
   completedAt?: string
@@ -26,6 +35,7 @@ export interface CreateCampaignInput {
   templateId: string
   campaignType: string
   status?: CampaignStatus
+  audienceFilter?: CampaignAudienceFilter
   scheduledAt?: string
 }
 
@@ -34,10 +44,12 @@ export interface UpdateCampaignInput {
   templateId?: string
   campaignType?: string
   status?: CampaignStatus
+  audienceFilter?: CampaignAudienceFilter
   scheduledAt?: string
 }
 
 export interface ScheduleCampaignInput {
   scheduledAt: string
 }
+
 

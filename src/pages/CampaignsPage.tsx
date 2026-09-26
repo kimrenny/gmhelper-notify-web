@@ -1,7 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import { useApiClient } from '../hooks/useApiClient'
 import { ApiError, campaignService, templateService } from '../services'
-import type { Campaign, EmailTemplate } from '../types'
+import type { Campaign, CampaignAudienceFilter, EmailTemplate } from '../types'
 import { filterTemplatesByType } from '../utils'
 
 interface ErrorInfo {
@@ -40,6 +40,58 @@ const filterOptions = [
   { name: 'languageFilter', label: 'Language', value: 'All' },
   { name: 'accountStatusFilter', label: 'Account status', value: 'Active' },
 ]
+
+function buildAudienceFilter(form: CampaignFormState): CampaignAudienceFilter | undefined {
+  const filter: CampaignAudienceFilter = {}
+  let hasAny = false
+
+  const role = form.roleFilter.trim()
+  if (role && role.toLowerCase() !== 'all roles' && role.toLowerCase() !== 'all' && role.toLowerCase() !== 'any') {
+    filter.role = role
+    hasAny = true
+  }
+
+  const regDate = form.registrationDateFilter.trim()
+  if (regDate && regDate.toLowerCase() !== 'any date' && regDate.toLowerCase() !== 'all' && regDate.toLowerCase() !== 'any') {
+    filter.registrationDate = regDate
+    hasAny = true
+  }
+
+  const emailConf = form.emailConfirmedFilter.trim()
+  if (emailConf && emailConf.toLowerCase() !== 'any' && emailConf.toLowerCase() !== 'all') {
+    filter.emailConfirmed = emailConf
+    hasAny = true
+  }
+
+  const lang = form.languageFilter.trim()
+  if (lang && lang.toLowerCase() !== 'all' && lang.toLowerCase() !== 'any') {
+    filter.language = lang
+    hasAny = true
+  }
+
+  const accountStatus = form.accountStatusFilter.trim()
+  if (accountStatus && accountStatus.toLowerCase() !== 'active' && accountStatus.toLowerCase() !== 'all' && accountStatus.toLowerCase() !== 'any') {
+    filter.accountStatus = accountStatus
+    hasAny = true
+  }
+
+  return hasAny ? filter : undefined
+}
+
+function populateFormFromCampaign(campaign: Campaign, templateSubject?: string): CampaignFormState {
+  const af = campaign.audienceFilter
+  return {
+    name: campaign.name || '',
+    subject: templateSubject || '',
+    templateId: campaign.templateId || '',
+    campaignType: campaign.campaignType || 'broadcast',
+    roleFilter: af?.role || 'All roles',
+    registrationDateFilter: af?.registrationDate || 'Any date',
+    emailConfirmedFilter: af?.emailConfirmed || 'Any',
+    languageFilter: af?.language || 'All',
+    accountStatusFilter: af?.accountStatus || 'Active',
+  }
+}
 
 function formatDateTime(dateStr?: string): string {
   if (!dateStr) return '-'
@@ -203,29 +255,17 @@ function CampaignsPage() {
     const matchingTpl = templates.find((t) => t.id === campaign.templateId)
 
     // Populate immediate values
-    setFormData({
-      name: campaign.name || '',
-      subject: matchingTpl ? matchingTpl.subject : '',
-      templateId: campaign.templateId || '',
-      campaignType: campaign.campaignType || 'broadcast',
-      roleFilter: 'All roles',
-      registrationDateFilter: 'Any date',
-      emailConfirmedFilter: 'Any',
-      languageFilter: 'All',
-      accountStatusFilter: 'Active',
-    })
+    setFormData(populateFormFromCampaign(campaign, matchingTpl ? matchingTpl.subject : ''))
 
     // Load fresh details by ID
     setIsLoadingCampaign(true)
     try {
       const freshCampaign = await campaignService.getCampaign(campaign.id, apiClient)
       const freshMatchingTpl = templates.find((t) => t.id === freshCampaign.templateId)
+      const populated = populateFormFromCampaign(freshCampaign, freshMatchingTpl ? freshMatchingTpl.subject : '')
       setFormData((prev) => ({
         ...prev,
-        name: freshCampaign.name || prev.name,
-        templateId: freshCampaign.templateId || prev.templateId,
-        campaignType: freshCampaign.campaignType || prev.campaignType,
-        subject: freshMatchingTpl ? freshMatchingTpl.subject : prev.subject,
+        ...populated,
       }))
     } catch (err) {
       if (err instanceof ApiError) {
@@ -294,6 +334,8 @@ function CampaignsPage() {
     setIsSubmitting(true)
     setFormError(null)
 
+    const audienceFilter = buildAudienceFilter(formData)
+
     try {
       if (editingCampaignId) {
         await campaignService.updateCampaign(
@@ -302,6 +344,7 @@ function CampaignsPage() {
             name: formData.name.trim(),
             templateId: formData.templateId.trim(),
             campaignType: formData.campaignType || 'broadcast',
+            audienceFilter,
           },
           apiClient
         )
@@ -312,6 +355,7 @@ function CampaignsPage() {
             templateId: formData.templateId.trim(),
             campaignType: formData.campaignType || 'broadcast',
             status: 'draft',
+            audienceFilter,
           },
           apiClient
         )
