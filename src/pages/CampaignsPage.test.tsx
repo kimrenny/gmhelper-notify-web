@@ -1666,4 +1666,257 @@ describe('CampaignsPage component', () => {
     expect(templateSelect.textContent).not.toContain('Excluded Agreement Template')
     expect(templateSelect.textContent).not.toContain('Excluded Automation Template')
   })
+
+  it('29. Submitting create campaign form sends audienceFilter in request payload when customized', async () => {
+    let capturedCreatePayload: any = null
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: any) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(mockTemplates), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url.includes('/api/v1/campaigns') && options?.method === 'POST') {
+        capturedCreatePayload = JSON.parse(options.body)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'camp-new-1',
+              name: capturedCreatePayload.name,
+              templateId: capturedCreatePayload.templateId,
+              campaignType: capturedCreatePayload.campaignType,
+              status: 'draft',
+              audienceFilter: capturedCreatePayload.audienceFilter,
+              createdAt: '2026-09-25T00:00:00Z',
+            }),
+            {
+              status: 201,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /New Campaign/i })).toBeDefined()
+    })
+
+    // Open composer
+    fireEvent.click(screen.getByRole('button', { name: /New Campaign/i }))
+
+    // Fill form
+    fireEvent.change(screen.getByPlaceholderText('Enter campaign name'), {
+      target: { value: 'Targeted Spring Promo' },
+    })
+    fireEvent.change(screen.getByTestId('campaign-template-select'), {
+      target: { value: 'tpl-101' },
+    })
+
+    // Fill audience filters
+    fireEvent.change(screen.getByPlaceholderText('All roles'), {
+      target: { value: 'admin' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('Any date'), {
+      target: { value: 'last_30_days' },
+    })
+    fireEvent.change(screen.getByPlaceholderText('All'), {
+      target: { value: 'tr' },
+    })
+
+    // Submit
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+
+    await waitFor(() => {
+      expect(capturedCreatePayload).not.toBeNull()
+    })
+
+    expect(capturedCreatePayload.name).toBe('Targeted Spring Promo')
+    expect(capturedCreatePayload.templateId).toBe('tpl-101')
+    expect(capturedCreatePayload.audienceFilter).toEqual({
+      role: 'admin',
+      registrationDate: 'last_30_days',
+      language: 'tr',
+    })
+  })
+
+  it('30. Submitting create campaign form does not send audienceFilter when filters remain default', async () => {
+    let capturedCreatePayload: any = null
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: any) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(mockTemplates), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url.includes('/api/v1/campaigns') && options?.method === 'POST') {
+        capturedCreatePayload = JSON.parse(options.body)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              id: 'camp-broadcast-1',
+              name: capturedCreatePayload.name,
+              templateId: capturedCreatePayload.templateId,
+              campaignType: capturedCreatePayload.campaignType,
+              status: 'draft',
+              createdAt: '2026-09-25T00:00:00Z',
+            }),
+            {
+              status: 201,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /New Campaign/i })).toBeDefined()
+    })
+
+    // Open composer
+    fireEvent.click(screen.getByRole('button', { name: /New Campaign/i }))
+
+    // Fill only required fields
+    fireEvent.change(screen.getByPlaceholderText('Enter campaign name'), {
+      target: { value: 'Broadcast General' },
+    })
+    fireEvent.change(screen.getByTestId('campaign-template-select'), {
+      target: { value: 'tpl-101' },
+    })
+
+    // Submit without touching filters
+    fireEvent.click(screen.getByRole('button', { name: /^Send$/i }))
+
+    await waitFor(() => {
+      expect(capturedCreatePayload).not.toBeNull()
+    })
+
+    expect(capturedCreatePayload.name).toBe('Broadcast General')
+    expect(capturedCreatePayload.audienceFilter).toBeUndefined()
+  })
+
+  it('31. Restores persisted audienceFilter when editing an existing campaign and submits updated filters', async () => {
+    const existingCampaign = {
+      id: 'camp-edit-1',
+      name: 'Existing Targeted Campaign',
+      templateId: 'tpl-101',
+      campaignType: 'broadcast',
+      status: 'draft',
+      audienceFilter: {
+        role: 'VIP',
+        language: 'en',
+        registrationDate: 'today',
+        emailConfirmed: 'confirmed',
+        accountStatus: 'active',
+      },
+      createdAt: '2026-09-20T00:00:00Z',
+    }
+
+    let capturedUpdatePayload: any = null
+
+    const mockFetch = vi.fn().mockImplementation((url: string, options?: any) => {
+      if (url.includes('/api/v1/templates')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(mockTemplates), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      if (url.includes('/api/v1/campaigns/camp-edit-1') && options?.method === 'PUT') {
+        capturedUpdatePayload = JSON.parse(options.body)
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              ...existingCampaign,
+              ...capturedUpdatePayload,
+            }),
+            {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }
+          )
+        )
+      }
+      if (url.includes('/api/v1/campaigns/camp-edit-1')) {
+        return Promise.resolve(
+          new Response(JSON.stringify(existingCampaign), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+        )
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify([existingCampaign]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      )
+    })
+    globalThis.fetch = mockFetch
+
+    render(<CampaignsPage />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Existing Targeted Campaign')).toBeDefined()
+    })
+
+    // Click edit on the campaign
+    const editBtn = screen.getByRole('button', { name: /Edit/i })
+    fireEvent.click(editBtn)
+
+    // Verify audience filter input fields are populated with persisted values
+    await waitFor(() => {
+      const roleInput = screen.getByDisplayValue('VIP') as HTMLInputElement
+      expect(roleInput).toBeDefined()
+      const langInput = screen.getByDisplayValue('en') as HTMLInputElement
+      expect(langInput).toBeDefined()
+      const dateInput = screen.getByDisplayValue('today') as HTMLInputElement
+      expect(dateInput).toBeDefined()
+      const emailConfInput = screen.getByDisplayValue('confirmed') as HTMLInputElement
+      expect(emailConfInput).toBeDefined()
+    })
+
+    // Modify the role filter to 'SuperAdmin'
+    fireEvent.change(screen.getByDisplayValue('VIP'), {
+      target: { value: 'SuperAdmin' },
+    })
+
+    // Submit update
+    fireEvent.click(screen.getByRole('button', { name: /Save Changes/i }))
+
+    await waitFor(() => {
+      expect(capturedUpdatePayload).not.toBeNull()
+    })
+
+    expect(capturedUpdatePayload.audienceFilter.role).toBe('SuperAdmin')
+    expect(capturedUpdatePayload.audienceFilter.language).toBe('en')
+    expect(capturedUpdatePayload.audienceFilter.registrationDate).toBe('today')
+    expect(capturedUpdatePayload.audienceFilter.emailConfirmed).toBe('confirmed')
+  })
 })

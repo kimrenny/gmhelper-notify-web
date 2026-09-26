@@ -402,4 +402,74 @@ describe('SettingsPage component', () => {
       screen.getByText(/SMTP network connectivity, authentication credentials/i)
     ).toBeDefined()
   })
+
+  it('18. Displays 401 unauthorized error on initial load', async () => {
+    vi.spyOn(settingsService, 'getSettings').mockRejectedValue(
+      new ApiError('Unauthorized', 401, 'UNAUTHORIZED')
+    )
+    renderComponent()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-load-error')).toBeDefined()
+    })
+
+    expect(
+      screen.getByText('You are not authorized to view settings. Please sign in again.')
+    ).toBeDefined()
+  })
+
+  it('19. Displays 403 forbidden error on initial load', async () => {
+    vi.spyOn(settingsService, 'getSettings').mockRejectedValue(
+      new ApiError('Forbidden', 403, 'FORBIDDEN')
+    )
+    renderComponent()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-load-error')).toBeDefined()
+    })
+
+    expect(
+      screen.getByText('You do not have permission to access application settings.')
+    ).toBeDefined()
+  })
+
+  it('20. Displays backend validation error message (400 Bad Request) on save', async () => {
+    vi.spyOn(settingsService, 'getSettings').mockResolvedValue(sampleSettings)
+    vi.spyOn(settingsService, 'updateSettings').mockRejectedValue(
+      new ApiError('invalid settings input: unsupported locale', 400, 'INVALID_INPUT')
+    )
+
+    renderComponent()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-from-name-input')).toBeDefined()
+    })
+
+    fireEvent.change(screen.getByTestId('settings-from-name-input'), {
+      target: { name: 'defaultFromName', value: 'New Name' },
+    })
+
+    fireEvent.click(screen.getByTestId('settings-save-btn'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-save-error')).toBeDefined()
+    })
+
+    expect(screen.getByText('invalid settings input: unsupported locale')).toBeDefined()
+  })
+
+  it('21. Verifies absence of sensitive credentials or password fields in the settings UI', async () => {
+    vi.spyOn(settingsService, 'getSettings').mockResolvedValue(sampleSettings)
+    renderComponent()
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings-form')).toBeDefined()
+    })
+
+    // Confirm no password inputs or exposed secret fields exist in DOM
+    expect(screen.queryByPlaceholderText(/password/i)).toBeNull()
+    expect(screen.queryByPlaceholderText(/secret/i)).toBeNull()
+    expect(screen.queryByPlaceholderText(/key/i)).toBeNull()
+  })
 })
+
