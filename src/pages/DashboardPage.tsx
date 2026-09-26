@@ -192,6 +192,14 @@ function DashboardPage() {
           >
             Send Direct Message
           </button>
+          <button
+            type="button"
+            className="gm-admin-btn"
+            onClick={() => navigate('/admin/transactional-emails')}
+            data-testid="quick-action-transactional"
+          >
+            Transactional Emails
+          </button>
         </div>
       </div>
 

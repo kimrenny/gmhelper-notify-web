@@ -7,4 +7,5 @@ export { default as DirectMessagePage } from './DirectMessagePage'
 export { default as EmailTemplatesPage } from './EmailTemplatesPage'
 export { default as SettingsPage } from './SettingsPage'
 export { default as ActivityPage } from './ActivityPage'
+export { default as TransactionalEmailsPage } from './TransactionalEmailsPage'
 

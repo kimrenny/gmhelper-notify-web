@@ -12,6 +12,7 @@ import {
   DirectMessagePage,
   EmailTemplatesPage,
   SettingsPage,
+  TransactionalEmailsPage,
 } from './pages'
 
 function App() {
@@ -71,6 +72,18 @@ function App() {
                   <DirectMessagePage />
                 </AdminLayout>
               }
+            />
+            <Route
+              path="/admin/transactional-emails"
+              element={
+                <AdminLayout>
+                  <TransactionalEmailsPage />
+                </AdminLayout>
+              }
+            />
+            <Route
+              path="/transactional-emails"
+              element={<Navigate to="/admin/transactional-emails" replace />}
             />
             <Route
               path="/admin/templates"
